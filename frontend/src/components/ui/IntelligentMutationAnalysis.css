@@ -1,0 +1,410 @@
+/* ==============================================================================
+   BIOCRYSTAL 3D — INTELLIGENT MUTATION & CORRECTION ENGINE
+   Design: Enterprise Scientific Black and White Workstation
+   Palette: #080808 (bg), #151515 (panel), #1c1c1c (raised), #292929 (border),
+            #ff7417 (orange), #36c5e8 (cyan), #42cf91 (green), #ff626b (red), #f4b942 (amber)
+   Typography: Inter & DM Mono / JetBrains Mono
+   ============================================================================== */
+
+.ima-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  background-color: #080808;
+  color: #f5f5f5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 1.25rem;
+  gap: 1.25rem;
+}
+
+/* Header & Controls */
+.ima-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #292929;
+  padding-bottom: 0.85rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ima-title-area h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #f5f5f5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ima-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.ima-badge-cyan {
+  background: rgba(54, 197, 232, 0.12);
+  color: #36c5e8;
+  border: 1px solid rgba(54, 197, 232, 0.3);
+}
+
+.ima-badge-amber {
+  background: rgba(244, 185, 66, 0.12);
+  color: #f4b942;
+  border: 1px solid rgba(244, 185, 66, 0.3);
+}
+
+.ima-badge-green {
+  background: rgba(66, 207, 145, 0.12);
+  color: #42cf91;
+  border: 1px solid rgba(66, 207, 145, 0.3);
+}
+
+/* Grid Layout */
+.ima-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 1024px) {
+  .ima-grid-top {
+    grid-template-columns: 1.15fr 0.85fr;
+  }
+}
+
+/* Laboratory Panel Cards */
+.ima-panel {
+  background-color: #151515;
+  border: 1px solid #292929;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+}
+
+.ima-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1c1c1c;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #292929;
+}
+
+.ima-panel-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a3a3a3;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ima-panel-body {
+  padding: 0.85rem;
+}
+
+/* Sequence Input Editor */
+.ima-textarea {
+  width: 100%;
+  background: #080808;
+  border: 1px solid #292929;
+  border-radius: 4px;
+  color: #f5f5f5;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.85rem;
+  padding: 0.65rem;
+  resize: vertical;
+  min-height: 80px;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.18s ease;
+}
+
+.ima-textarea:focus {
+  border-color: #ff7417;
+  box-shadow: 0 0 0 2px rgba(255, 116, 23, 0.15);
+}
+
+.ima-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.ima-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #a3a3a3;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Button & Controls */
+.ima-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: none;
+}
+
+.ima-button-primary {
+  background: #f5f5f5;
+  color: #080808;
+}
+
+.ima-button-primary:hover {
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+
+.ima-button-secondary {
+  background: #1c1c1c;
+  color: #f5f5f5;
+  border: 1px solid #292929;
+}
+
+.ima-button-secondary:hover {
+  background: #242424;
+  border-color: #383838;
+}
+
+.ima-button-amber {
+  background: #ff7417;
+  color: #080808;
+}
+
+.ima-button-amber:hover {
+  background: #ff8533;
+  box-shadow: 0 0 12px rgba(255, 116, 23, 0.35);
+}
+
+/* Metric Stats Grid */
+.ima-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .ima-metrics-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.ima-metric-box {
+  background: #101010;
+  border: 1px solid #292929;
+  padding: 0.65rem;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ima-metric-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #686868;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ima-metric-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f5f5f5;
+}
+
+/* Mutation Differential Table */
+.ima-table-wrap {
+  overflow-x: auto;
+}
+
+.ima-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.ima-table th {
+  background: #1c1c1c;
+  color: #a3a3a3;
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  font-weight: 600;
+  border-bottom: 1px solid #292929;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+}
+
+.ima-table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #292929;
+  color: #f5f5f5;
+  font-family: 'DM Mono', monospace;
+}
+
+.ima-table tr:hover {
+  background-color: #1a1a1a;
+  cursor: pointer;
+}
+
+.ima-table tr.selected {
+  background-color: rgba(255, 116, 23, 0.08);
+  border-left: 2px solid #ff7417;
+}
+
+/* Base Badges in Table */
+.ima-base-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 3px;
+  font-weight: 700;
+  color: #080808;
+  font-size: 0.75rem;
+}
+
+/* Candidate Recommendation Cards */
+.ima-candidate-card {
+  background: #101010;
+  border: 1px solid #292929;
+  border-radius: 6px;
+  padding: 0.85rem;
+  margin-bottom: 0.75rem;
+  transition: all 0.18s ease;
+}
+
+.ima-candidate-card:hover {
+  border-color: #383838;
+}
+
+.ima-candidate-card.active-candidate {
+  border-color: #ff7417;
+  background: #151515;
+}
+
+.ima-candidate-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.ima-candidate-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f5f5f5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ima-score-pill {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  background: rgba(66, 207, 145, 0.15);
+  color: #42cf91;
+  border: 1px solid rgba(66, 207, 145, 0.35);
+}
+
+.ima-seq-block {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8rem;
+  background: #080808;
+  padding: 0.5rem 0.65rem;
+  border-radius: 4px;
+  border: 1px solid #292929;
+  letter-spacing: 0.05em;
+  word-break: break-all;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Scientific Limitation Box */
+.ima-safeguard-box {
+  background: rgba(244, 185, 66, 0.05);
+  border: 1px solid rgba(244, 185, 66, 0.25);
+  border-radius: 6px;
+  padding: 0.75rem;
+  font-size: 0.75rem;
+  color: #d4a34b;
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+/* Confirmation Modal Overlay */
+.ima-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.ima-modal {
+  background: #151515;
+  border: 1px solid #383838;
+  border-radius: 8px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.ima-modal-header {
+  background: #1c1c1c;
+  padding: 1rem;
+  border-bottom: 1px solid #292929;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ima-modal-body {
+  padding: 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #d1d5db;
+}
+
+.ima-modal-footer {
+  padding: 0.85rem 1.25rem;
+  background: #101010;
+  border-top: 1px solid #292929;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
