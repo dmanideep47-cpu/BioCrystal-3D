@@ -30,7 +30,7 @@ html {
   scroll-padding-top: 90px;
 }
 
-body {
+body:has(.bc-page) {
   margin: 0;
   background: var(--bc-white);
   font-family: var(--bc-font-body);
@@ -2605,6 +2605,19 @@ a:focus-visible {
 .bc-precision-cta:focus-visible {
   outline: 2px solid var(--bc-orange);
   outline-offset: 5px;
+}
+
+.bc-precision-cta--dark {
+  --bc-cta-bg: #111315;
+  --bc-cta-ink: #f4f3ef;
+  --bc-cta-border: #111315;
+  --bc-cta-bracket: #111315;
+  --bc-cta-hover: #ff6500;
+}
+
+.bc-precision-cta--dark:hover,
+.bc-precision-cta--dark:focus-visible {
+  color: #111315;
 }
 
 .bc-precision-cta--orange {
