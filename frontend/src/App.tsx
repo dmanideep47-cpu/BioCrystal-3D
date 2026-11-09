@@ -117,7 +117,10 @@ export function App() {
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
   const [resetCameraTrigger, setResetCameraTrigger] = useState<number>(0);
 
-  const validation = useMemo(() => validateDNASequence(originalSequence), [originalSequence]);
+  const validation = useMemo(
+    () => validateDNASequence(activeDiff || analysisSequenceApplied ? mutatedSequence : originalSequence),
+    [activeDiff, analysisSequenceApplied, mutatedSequence, originalSequence],
+  );
 
   const mutatedPositions = useMemo(() => {
     const positions = new Set<number>(analysisMutationPositions);
@@ -135,9 +138,9 @@ export function App() {
       sequenceToDisplay,
       selectedStrand || 'coding',
       mutatedPositions,
-      originalSequence,
+      comparisonBaselineSequence,
     ),
-    [sequenceToDisplay, selectedStrand, mutatedPositions, originalSequence],
+    [sequenceToDisplay, selectedStrand, mutatedPositions, comparisonBaselineSequence],
   );
 
   const selectedItem: NucleotideItem | null = useMemo(() => {
