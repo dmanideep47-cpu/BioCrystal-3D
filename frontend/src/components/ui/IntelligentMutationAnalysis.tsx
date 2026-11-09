@@ -49,9 +49,12 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
 }) => {
   // Input sequence state
   const [obsInput, setObsInput] = useState<string>(currentSequence);
-  const [refInput, setRefInput] = useState<string>(referenceSequence || 'ATGGCTACTGGTTAA');
-  const [useReference, setUseReference] = useState<boolean>(true);
+  const [refInput, setRefInput] = useState<string>(referenceSequence || '');
+  const [useReference, setUseReference] = useState<boolean>(Boolean(referenceSequence));
+  const [referenceContextConfirmed, setReferenceContextConfirmed] = useState<boolean>(false);
+  const [codingContextConfirmed, setCodingContextConfirmed] = useState<boolean>(false);
   const [readingFrame, setReadingFrame] = useState<number>(0); // 0, 1, 2 (+1, +2, +3)
+  const [analysisRunKey, setAnalysisRunKey] = useState<number>(0);
 
   // Optimization constraints
   const [targetGcMin, setTargetGcMin] = useState<number>(40);
@@ -64,6 +67,9 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
   const [exploratoryResult, setExploratoryResult] = useState<ExploratoryAnalysisResult | null>(null);
   const [candidatesList, setCandidatesList] = useState<CorrectionCandidate[]>([]);
   const [selectedMutation, setSelectedMutation] = useState<AlignmentMutation | null>(null);
+  const [recommendationNotice, setRecommendationNotice] = useState<string>('');
+  const [recommendationStatus, setRecommendationStatus] = useState<string>('');
+  const [rankingBasis, setRankingBasis] = useState<string>('');
 
   // Confirmation modal state
   const [candidateToApply, setCandidateToApply] = useState<CorrectionCandidate | null>(null);
@@ -89,9 +95,18 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
           obsInput.trim(),
           refInput.trim(),
           readingFrame,
-          { target_gc_min: targetGcMin, target_gc_max: targetGcMax, preserve_protein: preserveProtein }
+          {
+            target_gc_min: targetGcMin,
+            target_gc_max: targetGcMax,
+            preserve_protein: preserveProtein,
+            candidate_mode: 'reference_restoration',
+            reference_context_confirmed: referenceContextConfirmed,
+          }
         );
         setCandidatesList(rec.candidates || []);
+        setRecommendationNotice(rec.recommendation_notice || rec.safeguards_notice || '');
+        setRecommendationStatus(rec.recommendation_status || '');
+        setRankingBasis(rec.ranking_basis || '');
         if (comp.alignment.mutations.length > 0) {
           setSelectedMutation(comp.alignment.mutations[0]);
           onSelectPosition(comp.alignment.mutations[0].reference_position);
@@ -107,12 +122,23 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
           obsInput.trim(),
           undefined,
           readingFrame,
-          { target_gc_min: targetGcMin, target_gc_max: targetGcMax, preserve_protein: preserveProtein }
+          {
+            target_gc_min: targetGcMin,
+            target_gc_max: targetGcMax,
+            preserve_protein: preserveProtein,
+            candidate_mode: 'sequence_design',
+            coding_context_confirmed: codingContextConfirmed,
+          }
         );
         setCandidatesList(rec.candidates || []);
+        setRecommendationNotice(rec.recommendation_notice || rec.safeguards_notice || '');
+        setRecommendationStatus(rec.recommendation_status || '');
+        setRankingBasis(rec.ranking_basis || '');
       }
     } catch (err) {
       console.error('Analysis failed', err);
+      setRecommendationNotice('Analysis failed. Check that the BioCrystal backend is running and review the browser console for details.');
+      setCandidatesList([]);
     } finally {
       setIsLoading(false);
     }
@@ -122,7 +148,7 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
   useEffect(() => {
     runAnalysis();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [analysisRunKey]);
 
   // Handle FASTA upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'obs' | 'ref') => {
@@ -140,31 +166,17 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
     reader.readAsText(file);
   };
 
-  // Confirm applying a candidate
+  // Apply a candidate as a new working sequence while preserving the selected
+  // reference and the original input in the parent workspace.
   const handleConfirmApply = () => {
     if (!candidateToApply) return;
     const targetSeq = candidateToApply.sequence;
-    const activeRef = useReference && refInput.trim() ? refInput.trim() : targetSeq;
+    const activeRef = useReference && refInput.trim() ? refInput.trim() : undefined;
 
-    let activeDiff: MutationDiff | null = null;
-    if (activeRef !== targetSeq && candidateToApply.edits_detail.length > 0) {
-      activeDiff = {
-        type: 'substitution',
-        position: selectedMutation ? selectedMutation.reference_position : 1,
-        originalBase: selectedMutation ? selectedMutation.original_base : 'T',
-        newBase: selectedMutation ? selectedMutation.observed_base : 'G',
-        originalSequence: activeRef,
-        mutatedSequence: targetSeq,
-        category: 'synonymous',
-        categoryLabel: 'Candidate Applied',
-        description: candidateToApply.rationale,
-        readingFrameShift: 0,
-      };
-    }
-
-    onApplySequence(targetSeq, activeRef, activeDiff);
+    onApplySequence(targetSeq, activeRef, null);
     setObsInput(targetSeq);
     setCandidateToApply(null);
+    setAnalysisRunKey((key) => key + 1);
   };
 
   // Download PDF Report
@@ -313,7 +325,7 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
             {useReference && (
               <div className="ima-input-row">
                 <div className="ima-label">
-                  <span className="text-cyan-400">Reference Wild-Type Sequence (for Alignment)</span>
+                  <span className="text-cyan-400">Reference DNA Sequence (5' → 3')</span>
                   <span className="font-mono text-xs">{refValidation.length} bp</span>
                 </div>
                 <textarea
@@ -326,10 +338,13 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
                 <div className="flex justify-between items-center text-xs text-slate-400">
                   <button
                     type="button"
-                    onClick={() => setRefInput('ATGGCTACTGGTTAA')}
+                    onClick={() => {
+                      setRefInput('ATGGCTACTGGTTAA');
+                      setReferenceContextConfirmed(false);
+                    }}
                     className="hover:text-cyan-400 underline cursor-pointer"
                   >
-                    Set Canonical Reference
+                    Load Educational Example Reference
                   </button>
                   <label className="hover:text-slate-200 cursor-pointer">
                     Upload Ref FASTA
@@ -421,6 +436,29 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
                   />
                   <span>Preserve Protein</span>
                 </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-400 pt-2">
+                {useReference ? (
+                  <label className="flex items-start gap-1.5 max-w-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={referenceContextConfirmed}
+                      onChange={(e) => setReferenceContextConfirmed(e.target.checked)}
+                      className="mt-0.5 rounded text-cyan-500"
+                    />
+                    <span>I have checked that this reference matches the intended organism, locus, strand and transcript context. Educational examples must remain labelled as examples.</span>
+                  </label>
+                ) : (
+                  <label className="flex items-start gap-1.5 max-w-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={codingContextConfirmed}
+                      onChange={(e) => setCodingContextConfirmed(e.target.checked)}
+                      className="mt-0.5 rounded text-cyan-500"
+                    />
+                    <span>This is a coding region and the selected reading frame is confirmed. Required before synonymous design proposals.</span>
+                  </label>
+                )}
               </div>
             </div>
           </div>
@@ -662,9 +700,17 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
           </span>
         </div>
         <div className="ima-panel-body">
+          {rankingBasis && (
+            <div className="px-3 py-2 mb-3 text-[11px] text-cyan-200 bg-cyan-950/20 border border-cyan-900/50 rounded">
+              <b>Ranking basis:</b> {rankingBasis}
+            </div>
+          )}
           {candidatesList.length === 0 ? (
-            <div className="p-4 text-center text-xs text-slate-400">
-              No correction proposals required; sequence matches canonical criteria.
+            <div className="p-4 text-xs text-slate-300 bg-[#0d1117] border border-[#263342] rounded">
+              <div className="font-semibold text-slate-100 mb-1">
+                {recommendationStatus.replace(/_/g, ' ') || 'Candidate assessment'}
+              </div>
+              {recommendationNotice || 'No candidates have been assessed yet. Run the analysis to continue.'}
             </div>
           ) : (
             candidatesList.map((cand, idx) => (
@@ -677,14 +723,11 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
                     <span className="ima-badge ima-badge-cyan mr-2">{cand.strategy}</span>
                     <span className="ima-cand-title">{cand.title}</span>
                   </div>
-                  <span
-                    className={`ima-cand-score ${
-                      cand.score >= 90
-                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                        : 'bg-slate-800 text-slate-300 border border-slate-700'
-                    }`}
-                  >
-                    Score: {cand.score.toFixed(1)} / 100
+                  <span className="ima-cand-score bg-slate-800 text-slate-300 border border-slate-700">
+                    Rank #{cand.rank ?? idx + 1} · Objective fit: {(cand.objective_fit_score ?? cand.score).toFixed(1)} / 100
+                    <span className="block text-[9px] font-normal text-slate-400">
+                      {cand.score_label || 'Objective fit only, not a probability'}
+                    </span>
                   </span>
                 </div>
 
