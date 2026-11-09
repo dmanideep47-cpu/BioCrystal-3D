@@ -373,7 +373,7 @@ def perform_pairwise_alignment(
                 "observed_position": curr_obs_pos,
                 "original_base": orig_base,
                 "observed_base": new_base,
-                "affected_codon_index": codon_idx + 1,
+                "affected_codon_index": codon_idx + 1 if codon_idx >= 0 else None,
                 "reference_codon": ref_codon,
                 "observed_codon": obs_codon,
                 "original_amino_acid": ref_aa,
