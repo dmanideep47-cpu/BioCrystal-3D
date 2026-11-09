@@ -82,6 +82,7 @@ def generate_correction_candidates(
 
     table = CodonTable.unambiguous_dna_by_id[table_id]
     result = dict(base_result)
+    candidates: List[Dict[str, Any]] = []
 
     clean_ref: Optional[str] = None
     if ref_seq and ref_seq.strip():
