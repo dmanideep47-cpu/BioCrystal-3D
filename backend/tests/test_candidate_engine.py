@@ -77,7 +77,7 @@ def test_confirmed_synonymous_design_preserves_translation():
     assert result["recommendation_status"] == "design_candidates_available"
     assert result["candidates"]
     for candidate in result["candidates"]:
-        assert candidate["protein_sequence"] == "MA*T"
+        assert candidate["protein_sequence"] == "MAT*"
         assert candidate["protein_preserved"] is True
         assert not candidate["constraint_violations"]
 
