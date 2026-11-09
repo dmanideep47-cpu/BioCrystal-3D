@@ -214,7 +214,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> bytes:
     elements.append(Paragraph("3. Intelligent Candidate Correction Recommendations", h2_style))
     candidates = report_data.get('candidates') or []
     if candidates:
-        cand_rows = [["Rank", "Strategy / Title", "Edits", "GC%", "Protein Preserved", "Score"]]
+        cand_rows = [["Rank", "Strategy / Title", "Edits", "GC%", "Translation Match", "Objective Fit"]]
         for idx, c in enumerate(candidates[:5]):
             cand_rows.append([
                 f"#{idx + 1}",
@@ -222,7 +222,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> bytes:
                 str(c.get('edits_count', 0)),
                 f"{c.get('resulting_gc_percent', 0)}%",
                 "Yes" if c.get('protein_preserved') else "No",
-                f"{c.get('score', 0):.1f}",
+                f"{c.get('objective_fit_score', c.get('score', 0)):.1f}",
             ])
 
         c_table = Table(cand_rows, colWidths=[40, 220, 45, 60, 110, 65])
@@ -242,16 +242,63 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> bytes:
         # Top candidate detail
         top_c = candidates[0]
         elements.append(Paragraph(f"<b>Top Ranked Proposal:</b> {top_c.get('title')}", body_style))
-        elements.append(Paragraph(f"<b>Biological Rationale:</b> {top_c.get('rationale')}", callout_style))
-        elements.append(Paragraph(f"<b>Candidate Sequence:</b>", body_style))
+        elements.append(Paragraph(f"<b>Objective Rationale:</b> {top_c.get('rationale')}", callout_style))
+        if top_c.get('score_label'):
+            elements.append(Paragraph(f"<b>Ranking metric:</b> {top_c.get('score_label')}", callout_style))
+        for edit in top_c.get('edits_detail') or []:
+            elements.append(Paragraph(f"&bull; {edit}", callout_style))
+        elements.append(Paragraph("<b>Candidate Sequence:</b>", body_style))
         elements.append(Paragraph(top_c.get('sequence', ''), mono_style))
     else:
-        elements.append(Paragraph("No correction candidate requested or generated for this session.", callout_style))
+        notice = report_data.get('recommendation_notice') or "No candidate was generated for this session."
+        elements.append(Paragraph(str(notice), callout_style))
+
+    ranking_basis = report_data.get('ranking_basis')
+    recommendation_status = report_data.get('recommendation_status')
+    if recommendation_status:
+        elements.append(Paragraph(f"<b>Assessment status:</b> {recommendation_status}", callout_style))
+    if ranking_basis:
+        elements.append(Paragraph(f"<b>Ranking basis:</b> {ranking_basis}", callout_style))
+    if report_data.get('recommendation_notice'):
+        elements.append(Paragraph(f"<b>Assessment note:</b> {report_data.get('recommendation_notice')}", callout_style))
 
     elements.append(Spacer(1, 10))
 
-    # 4. Computational Methodology & Scientific Safeguards
-    elements.append(Paragraph("4. Computational Methodology & Scientific Limitations", h2_style))
+    # 4. Applied Candidate Before/After Comparison
+    elements.append(Paragraph("4. Applied Candidate Before/After Comparison", h2_style))
+    before_sequence = (report_data.get('before_sequence') or '').strip().upper()
+    applied_candidate = report_data.get('applied_candidate') or {}
+    if before_sequence and applied_candidate.get('sequence'):
+        elements.append(Paragraph("<b>Before application:</b>", body_style))
+        elements.append(Paragraph(before_sequence, mono_style))
+        elements.append(Paragraph("<b>After application:</b>", body_style))
+        elements.append(Paragraph(str(applied_candidate.get('sequence', '')), mono_style))
+        elements.append(Paragraph(
+            f"<b>Applied proposal:</b> {applied_candidate.get('title', 'Candidate')}",
+            body_style
+        ))
+        for edit in applied_candidate.get('edits_detail') or []:
+            elements.append(Paragraph(f"&bull; {edit}", callout_style))
+        if applied_candidate.get('rationale'):
+            elements.append(Paragraph(
+                f"<b>Objective rationale:</b> {applied_candidate.get('rationale')}",
+                callout_style
+            ))
+        elements.append(Paragraph(
+            "The comparison records the software state before and after candidate application. "
+            "It does not establish experimental or clinical benefit.",
+            disclaimer_style
+        ))
+    else:
+        elements.append(Paragraph(
+            "No candidate application was recorded in this report. Candidate proposals, if present, remain previews.",
+            callout_style
+        ))
+
+    elements.append(Spacer(1, 10))
+
+    # 5. Computational Methodology & Scientific Safeguards
+    elements.append(Paragraph("5. Computational Methodology & Scientific Limitations", h2_style))
     elements.append(Paragraph(
         "• Pairwise Alignment: Conducted via Biopython <code>Bio.Align.PairwiseAligner</code> implementing global Needleman-Wunsch dynamic programming.",
         callout_style
