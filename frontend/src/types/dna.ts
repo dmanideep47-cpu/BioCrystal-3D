@@ -187,6 +187,7 @@ export interface CorrectionCandidate {
   reference_identity_percent?: number | null;
   protein_matches_reference?: boolean | null;
   changed_positions?: number[];
+  before_changed_positions?: number[];
   rationale: string;
   scientific_limitation: string;
 }
