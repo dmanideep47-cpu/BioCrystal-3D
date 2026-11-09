@@ -102,6 +102,7 @@ export function App() {
   const [analysisSequenceApplied, setAnalysisSequenceApplied] = useState(false);
   const [analysisBaselineSequence, setAnalysisBaselineSequence] = useState<string>('');
   const [analysisMutationPositions, setAnalysisMutationPositions] = useState<number[]>([]);
+  const [analysisBaselineMutationPositions, setAnalysisBaselineMutationPositions] = useState<number[]>([]);
   const [activeReference, setActiveReference] = useState<ReferenceSequence | null>(
     REFERENCE_SEQUENCES[0] ?? null,
   );
@@ -156,6 +157,7 @@ export function App() {
     setAnalysisSequenceApplied(false);
     setAnalysisBaselineSequence('');
     setAnalysisMutationPositions([]);
+    setAnalysisBaselineMutationPositions([]);
     setSelectedPosition(newSequence.length > 0 ? 1 : null);
     setSelectedStrand('coding');
   };
@@ -169,6 +171,7 @@ export function App() {
     setAnalysisSequenceApplied(false);
     setAnalysisBaselineSequence('');
     setAnalysisMutationPositions([]);
+    setAnalysisBaselineMutationPositions([]);
     setSelectedPosition(reference.id === 'demo-initial' ? 9 : 1);
     setSelectedStrand('coding');
   };
@@ -188,6 +191,7 @@ export function App() {
     setAnalysisSequenceApplied(false);
     setAnalysisBaselineSequence('');
     setAnalysisMutationPositions([]);
+    setAnalysisBaselineMutationPositions([]);
     setSelectedPosition(position);
     setSelectedStrand('coding');
   };
@@ -198,19 +202,29 @@ export function App() {
     setAnalysisSequenceApplied(false);
     setAnalysisBaselineSequence('');
     setAnalysisMutationPositions([]);
+    setAnalysisBaselineMutationPositions([]);
   };
 
   const handleApplyAnalysisSequence = (
     newSequence: string,
     referenceSequence?: string,
     changedPositions: number[] = [],
+    beforeChangedPositions: number[] = [],
     baselineSequence?: string,
   ) => {
     // Keep the reference, observed input and proposed working sequence separate.
-    if (referenceSequence) setReferenceSeqText(referenceSequence);
+    if (referenceSequence) {
+      setReferenceSeqText(referenceSequence);
+      if (activeReference && activeReference.sequence !== referenceSequence.replace(/\s+/g, '').toUpperCase()) {
+        setActiveReference(null);
+      }
+    }
     setAnalysisBaselineSequence(baselineSequence || originalSequence);
     setAnalysisMutationPositions(
       changedPositions.filter((position) => Number.isInteger(position) && position > 0 && position <= newSequence.length),
+    );
+    setAnalysisBaselineMutationPositions(
+      beforeChangedPositions.filter((position) => Number.isInteger(position) && position > 0 && position <= (baselineSequence || originalSequence).length),
     );
     setAnalysisSequenceApplied(true);
     setMutatedSequence(newSequence);
@@ -540,7 +554,7 @@ export function App() {
             {activeTab === 'comparison' && (
               <section className="bc-module-section">
                 <div className="bc-module-callout"><GitCompare size={19} /><div><strong>Reference vs. modified sequence</strong><span>Compare the original sequence with the currently applied mutation.</span></div></div>
-                <div className="bc-module-card"><ComparisonView originalSequence={comparisonBaselineSequence} mutatedSequence={mutatedSequence} mutationDiff={activeDiff} mutatedPositions={mutatedPositions} isCandidateComparison={analysisSequenceApplied} visualizationMode={visualizationMode} qualityPreset={qualityPreset} selectedPosition={selectedPosition} selectedStrand={selectedStrand} onSelectNucleotide={handleSelectNucleotide} hoveredPosition={hoveredPosition} setHoveredPosition={setHoveredPosition} autoRotate={autoRotate} autoRotateSpeed={0.8} /></div>
+                <div className="bc-module-card"><ComparisonView originalSequence={comparisonBaselineSequence} mutatedSequence={mutatedSequence} mutationDiff={activeDiff} mutatedPositions={mutatedPositions} baselineMutatedPositions={new Set(analysisBaselineMutationPositions)} isCandidateComparison={analysisSequenceApplied} visualizationMode={visualizationMode} qualityPreset={qualityPreset} selectedPosition={selectedPosition} selectedStrand={selectedStrand} onSelectNucleotide={handleSelectNucleotide} hoveredPosition={hoveredPosition} setHoveredPosition={setHoveredPosition} autoRotate={autoRotate} autoRotateSpeed={0.8} /></div>
               </section>
             )}
 
