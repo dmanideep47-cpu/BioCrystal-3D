@@ -99,6 +99,9 @@ export function App() {
   const [originalSequence, setOriginalSequence] = useState<string>('ATGGCTACTGGTTAA');
   const [mutatedSequence, setMutatedSequence] = useState<string>('ATGGCTACTGGTTAA');
   const [activeDiff, setActiveDiff] = useState<MutationDiff | null>(null);
+  const [analysisSequenceApplied, setAnalysisSequenceApplied] = useState(false);
+  const [analysisBaselineSequence, setAnalysisBaselineSequence] = useState<string>('');
+  const [analysisMutationPositions, setAnalysisMutationPositions] = useState<number[]>([]);
   const [activeReference, setActiveReference] = useState<ReferenceSequence | null>(
     REFERENCE_SEQUENCES[0] ?? null,
   );
@@ -117,12 +120,15 @@ export function App() {
   const validation = useMemo(() => validateDNASequence(originalSequence), [originalSequence]);
 
   const mutatedPositions = useMemo(() => {
-    const positions = new Set<number>();
+    const positions = new Set<number>(analysisMutationPositions);
     if (activeDiff) positions.add(activeDiff.position);
     return positions;
-  }, [activeDiff]);
+  }, [activeDiff, analysisMutationPositions]);
 
-  const sequenceToDisplay = activeDiff ? mutatedSequence : originalSequence;
+  const sequenceToDisplay = activeDiff || analysisSequenceApplied ? mutatedSequence : originalSequence;
+  const comparisonBaselineSequence = analysisSequenceApplied
+    ? analysisBaselineSequence
+    : originalSequence;
 
   const nucleotideItems = useMemo(
     () => buildNucleotideItems(
@@ -144,6 +150,9 @@ export function App() {
     setMutatedSequence(newSequence);
     setReferenceSeqText(newSequence);
     setActiveDiff(null);
+    setAnalysisSequenceApplied(false);
+    setAnalysisBaselineSequence('');
+    setAnalysisMutationPositions([]);
     setSelectedPosition(newSequence.length > 0 ? 1 : null);
     setSelectedStrand('coding');
   };
@@ -154,6 +163,9 @@ export function App() {
     setMutatedSequence(reference.sequence);
     setReferenceSeqText(reference.sequence);
     setActiveDiff(null);
+    setAnalysisSequenceApplied(false);
+    setAnalysisBaselineSequence('');
+    setAnalysisMutationPositions([]);
     setSelectedPosition(reference.id === 'demo-initial' ? 9 : 1);
     setSelectedStrand('coding');
   };
@@ -170,6 +182,9 @@ export function App() {
     const { mutatedSeq, diff } = simulateMutation(originalSequence, type, position, bases);
     setMutatedSequence(mutatedSeq);
     setActiveDiff(diff);
+    setAnalysisSequenceApplied(false);
+    setAnalysisBaselineSequence('');
+    setAnalysisMutationPositions([]);
     setSelectedPosition(position);
     setSelectedStrand('coding');
   };
@@ -177,21 +192,28 @@ export function App() {
   const handleResetMutation = () => {
     setMutatedSequence(originalSequence);
     setActiveDiff(null);
+    setAnalysisSequenceApplied(false);
+    setAnalysisBaselineSequence('');
+    setAnalysisMutationPositions([]);
   };
 
   const handleApplyAnalysisSequence = (
     newSequence: string,
     referenceSequence?: string,
-    diff?: MutationDiff | null,
+    changedPositions: number[] = [],
+    baselineSequence?: string,
   ) => {
-    if (referenceSequence) {
-      setOriginalSequence(referenceSequence);
-      setReferenceSeqText(referenceSequence);
-    }
+    // Keep the reference, observed input and proposed working sequence separate.
+    if (referenceSequence) setReferenceSeqText(referenceSequence);
+    setAnalysisBaselineSequence(baselineSequence || originalSequence);
+    setAnalysisMutationPositions(
+      changedPositions.filter((position) => Number.isInteger(position) && position > 0 && position <= newSequence.length),
+    );
+    setAnalysisSequenceApplied(true);
     setMutatedSequence(newSequence);
-    setActiveDiff(diff ?? null);
-    if (diff) {
-      setSelectedPosition(diff.position);
+    setActiveDiff(null);
+    if (changedPositions.length > 0) {
+      setSelectedPosition(changedPositions[0]);
       setSelectedStrand('coding');
     }
   };
@@ -472,7 +494,7 @@ export function App() {
                         selectedStrand={selectedStrand}
                         onSelectNucleotide={handleSelectNucleotide}
                         mutatedPositions={mutatedPositions}
-                        originalSequence={originalSequence}
+                        originalSequence={comparisonBaselineSequence}
                       />
                     </div>
                   </div>
@@ -515,7 +537,7 @@ export function App() {
             {activeTab === 'comparison' && (
               <section className="bc-module-section">
                 <div className="bc-module-callout"><GitCompare size={19} /><div><strong>Reference vs. modified sequence</strong><span>Compare the original sequence with the currently applied mutation.</span></div></div>
-                <div className="bc-module-card"><ComparisonView originalSequence={originalSequence} mutatedSequence={mutatedSequence} mutationDiff={activeDiff} visualizationMode={visualizationMode} qualityPreset={qualityPreset} selectedPosition={selectedPosition} selectedStrand={selectedStrand} onSelectNucleotide={handleSelectNucleotide} hoveredPosition={hoveredPosition} setHoveredPosition={setHoveredPosition} autoRotate={autoRotate} autoRotateSpeed={0.8} /></div>
+                <div className="bc-module-card"><ComparisonView originalSequence={comparisonBaselineSequence} mutatedSequence={mutatedSequence} mutationDiff={activeDiff} mutatedPositions={mutatedPositions} isCandidateComparison={analysisSequenceApplied} visualizationMode={visualizationMode} qualityPreset={qualityPreset} selectedPosition={selectedPosition} selectedStrand={selectedStrand} onSelectNucleotide={handleSelectNucleotide} hoveredPosition={hoveredPosition} setHoveredPosition={setHoveredPosition} autoRotate={autoRotate} autoRotateSpeed={0.8} /></div>
               </section>
             )}
 
