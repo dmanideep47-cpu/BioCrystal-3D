@@ -744,44 +744,33 @@ export async function getCorrectionCandidates(
         constraints: constraints || null,
       }),
     });
-    if (res.ok) {
-      return await res.json();
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(detail || `Candidate service returned HTTP ${res.status}`);
     }
-  } catch {
-    // fallback client-side
-  }
 
-  const candidates: CorrectionCandidate[] = [];
-  if (referenceSequence && referenceSequence !== observedSequence) {
-    candidates.push({
-      candidate_id: 'cand_ref_restore',
-      title: 'Full Reference Restoration',
-      strategy: 'Reference Restoration',
-      sequence: referenceSequence,
-      edits_count: 1,
-      edits_detail: ['Revert variant loci back to wild-type reference'],
-      resulting_gc_percent: validateDNASequence(referenceSequence).gcPercent,
-      gc_delta: 0,
-      protein_sequence: extractCodons(referenceSequence).map((c) => c.aminoAcid.code1).join(''),
-      protein_preserved: true,
-      premature_stop_detected: false,
-      constraint_violations: [],
-      score: 98,
-      rationale: 'Restores observed sequence to match the authoritative wild-type reference sequence.',
-      scientific_limitation: 'Assumes the supplied reference sequence reflects the intended biological state.',
-    });
+    return await res.json();
+  } catch (error) {
+    // Never fabricate a restoration candidate in the browser. An unavailable
+    // scientific backend must be reported as unavailable, not replaced by a
+    // hard-coded score or an assumed reference repair.
+    return {
+      observed_sequence: observedSequence,
+      reference_sequence: referenceSequence || null,
+      reading_frame: `+${readingFrame + 1}`,
+      total_candidates: 0,
+      strategies_used: [],
+      candidates: [],
+      recommendation_status: 'candidate_service_unavailable',
+      recommendation_notice:
+        'Candidate assessment could not be completed because the scientific backend is unavailable. No replacement has been recommended.',
+      safeguards_notice:
+        error instanceof Error
+          ? error.message
+          : 'The candidate assessment service could not be reached. Try again when the backend is running.',
+    };
   }
-
-  return {
-    observed_sequence: observedSequence,
-    reference_sequence: referenceSequence || null,
-    reading_frame: `+${readingFrame + 1}`,
-    total_candidates: candidates.length,
-    strategies_used: candidates.map((c) => c.strategy),
-    candidates,
-    safeguards_notice:
-      'Caution: Candidate proposals are computational suggestions. Never apply alterations without experimental validation.',
-  };
 }
 
 
