@@ -33,7 +33,7 @@ import './IntelligentMutationAnalysis.css';
 interface IntelligentMutationAnalysisProps {
   currentSequence: string;
   referenceSequence: string | null;
-  onApplySequence: (newSeq: string, refSeq?: string, changedPositions?: number[], baselineSequence?: string) => void;
+  onApplySequence: (newSeq: string, refSeq?: string, changedPositions?: number[], beforeChangedPositions?: number[], baselineSequence?: string) => void;
   onSelectPosition: (pos: number) => void;
   onNavigateTo3D: () => void;
   onNavigateToComparison: () => void;
@@ -182,6 +182,7 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
       targetSeq,
       activeRef,
       candidateToApply.changed_positions || [],
+      candidateToApply.before_changed_positions || [],
       obsInput.trim(),
     );
     setObsInput(targetSeq);
