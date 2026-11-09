@@ -1,450 +1,424 @@
-import React, { useState } from 'react';
-import {
-  SequenceValidationResult,
-  MutationDiff,
-  ReferenceSequence,
-  FullAnalysisResult,
-} from '../../types/dna';
-import {
-  generateComplementaryStrand,
-} from '../../services/bioinformatics';
-import { jsPDF } from 'jspdf';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download,
   FileText,
-  Database,
-  Printer,
-  ShieldCheck,
-  Layers,
+  FileSpreadsheet,
+  ExternalLink,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
+import {
+  FullAnalysisResult,
+  SequenceEditRecord,
+} from '../../types/dna';
+import { exportPdfAPI } from '../../services/apiService';
 
 interface ReportViewProps {
-  originalSequence: string;
-  mutatedSequence: string;
-  mutationDiff: MutationDiff | null;
-  validation: SequenceValidationResult;
-  referenceSeq?: ReferenceSequence | null;
-  analysisResult?: FullAnalysisResult | null;
+  analysisResult: FullAnalysisResult;
+  referenceSequence: string;
+  originalSubmittedSequence: string;
+  currentEditedSequence: string;
+  lastAnalysedSequence: string;
+  editHistory: SequenceEditRecord[];
+  revision: number;
+  gene: string;
+  accession: string;
+  organism: string;
+  onReanalyse?: () => Promise<void>;
+  isReanalysing?: boolean;
 }
 
 export const ReportView: React.FC<ReportViewProps> = ({
-  originalSequence,
-  mutatedSequence: _mutatedSequence,
-  mutationDiff,
-  validation,
-  referenceSeq,
   analysisResult,
+  referenceSequence,
+  originalSubmittedSequence,
+  currentEditedSequence,
+  lastAnalysedSequence,
+  editHistory,
+  revision,
+  gene,
+  accession,
+  organism,
+  onReanalyse,
+  isReanalysing,
 }) => {
-  const compOrig = generateComplementaryStrand(originalSequence);
-  const [reportDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(true);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
-  // PDF Export generation using jsPDF
-  const exportPDF = () => {
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
+  const isModified = currentEditedSequence !== lastAnalysedSequence;
 
-    const primaryColor = [255, 116, 23]; // Accent Orange
-    const textColor = [20, 20, 20];
-    const subColor = [100, 100, 100];
+  // Generate / Fetch PDF from ReportLab Backend
+  const fetchPdfReport = useCallback(async () => {
+    setIsLoadingPdf(true);
+    setPdfError(null);
 
-    let y = 18;
+    try {
+      const payload = {
+        original_sequence: originalSubmittedSequence || lastAnalysedSequence,
+        current_sequence: lastAnalysedSequence,
+        reference_sequence: referenceSequence,
+        gene,
+        organism,
+        accession,
+        revision,
+        edit_history: editHistory.map((e) => ({
+          position: e.position,
+          oldBases: e.oldBases,
+          newBases: e.newBases,
+          action: e.action,
+          reason: e.reason,
+          timestamp: e.timestamp,
+        })),
+        alignment: analysisResult.alignment,
+        structure_mapping: analysisResult.structure_mapping,
+        reference_validation: analysisResult.reference_validation,
+        observed_validation: analysisResult.observed_validation,
+      };
 
-    // Header Title
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-    doc.text('BIOCRYSTAL 3D: DNA MUTATION ANALYSIS REPORT', 14, y);
+      const blob = await exportPdfAPI(payload);
+      setPdfBlob(blob);
 
-    y += 7;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(subColor[0], subColor[1], subColor[2]);
-    doc.text(`Generated: ${reportDate} | Simulation Core: Canonical B-DNA Engine v2.4`, 14, y);
-
-    y += 8;
-    doc.setDrawColor(220, 220, 220);
-    doc.line(14, y, 196, y);
-
-    // Section 1: Sequence Summary
-    y += 8;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-    doc.text('1. Input Sequence & Biophysical Properties', 14, y);
-
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.5);
-    doc.text(`Original Sequence (${originalSequence.length} bp, 5' -> 3'):`, 14, y);
-    y += 5;
-    doc.setFont('courier', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(originalSequence, 14, y);
-
-    y += 5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-    doc.text(`Complementary Strand (3' <- 5'):`, 14, y);
-    y += 5;
-    doc.setFont('courier', 'normal');
-    doc.setFontSize(9);
-    doc.text(compOrig, 14, y);
-
-    y += 7;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`GC Content: ${validation.gcPercent}% | AT Content: ${validation.atPercent}% | Melting Temp (Tm): ${validation.meltingTemperature} °C | Mol. Weight: ${validation.molecularWeightKDa} kDa`, 14, y);
-
-    // Section 2: Mutation Differential
-    y += 10;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('2. Mutation Differential & Consequence Evaluation', 14, y);
-
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    if (mutationDiff) {
-      const origB = mutationDiff.originalBase || '-';
-      const mutB = mutationDiff.newBase || mutationDiff.insertedBases || '-';
-      const origAA = mutationDiff.originalAminoAcid ? `${mutationDiff.originalAminoAcid.name} (${mutationDiff.originalAminoAcid.code3})` : 'N/A';
-      const mutAA = mutationDiff.mutatedAminoAcid ? `${mutationDiff.mutatedAminoAcid.name} (${mutationDiff.mutatedAminoAcid.code3})` : 'N/A';
-
-      doc.text(`Observed Mutation at Position #${mutationDiff.position}: ${origB} -> ${mutB} (${mutationDiff.type.toUpperCase()})`, 14, y);
-      y += 5;
-      doc.text(`Classification: ${mutationDiff.categoryLabel}`, 14, y);
-      y += 5;
-      doc.text(`Codon Shift: ${mutationDiff.originalCodon || 'N/A'} -> ${mutationDiff.mutatedCodon || 'N/A'}`, 14, y);
-      y += 5;
-      doc.text(`Translation Consequence: ${origAA} -> ${mutAA}`, 14, y);
-      y += 5;
-      doc.text(`Recommended Restoration: Change ${mutB} -> ${origB} at Position ${mutationDiff.position}`, 14, y);
-    } else {
-      doc.text('No sequence differences observed relative to canonical wild-type.', 14, y);
+      // Create local object URL for preview
+      const url = URL.createObjectURL(blob);
+      setPdfUrl((prevUrl) => {
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
+        return url;
+      });
+    } catch (err: any) {
+      console.error('Error fetching PDF report:', err);
+      setPdfError(err.message || 'Failed to generate 4-page scientific PDF report.');
+    } finally {
+      setIsLoadingPdf(false);
     }
+  }, [
+    originalSubmittedSequence,
+    lastAnalysedSequence,
+    referenceSequence,
+    gene,
+    organism,
+    accession,
+    revision,
+    editHistory,
+    analysisResult,
+  ]);
 
-    // Section 3: Data Sources
-    y += 10;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('3. Data Sources & Authority References', 14, y);
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.text('• NCBI Nucleotide & RefSeq Database: Standard Genetic Code (Table 1)', 14, y);
-    y += 4.5;
-    doc.text('• Ensembl Genome Browser / RCSB Protein Data Bank (PDB coordinates: 1BNA, 1A3N, 1TUP)', 14, y);
-    if (referenceSeq) {
-      y += 4.5;
-      doc.text(`• Active Reference: ${referenceSeq.name} (${referenceSeq.accessionNumber})`, 14, y);
+  // Load PDF on mount and when analysis / revision changes
+  useEffect(() => {
+    fetchPdfReport();
+    return () => {
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+      }
+    };
+  }, [fetchPdfReport]);
+
+  // Action: Download PDF File
+  const handleDownloadPdf = () => {
+    if (!pdfBlob) return;
+    setIsDownloading(true);
+    try {
+      const filename = `BioCrystal_${gene}_Report_Rev${revision}.pdf`;
+      const tempUrl = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = tempUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(tempUrl);
+    } finally {
+      setIsDownloading(false);
     }
-
-    // Section 4: Modeling Limitations
-    y += 9;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('4. Modeling Assumptions & Limitations', 14, y);
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('• 3D coordinates reflect canonical B-DNA double-helical parameters: 3.4 Å helical rise per base pair, 36.0° helical twist, 10.0 bp per turn, with antiparallel strands phase-offset at 144° creating canonical major and minor grooves.', 14, y, { maxWidth: 180 });
-    y += 8;
-    doc.text('• In-silico translation follows standard codon tables. Phenotypic impact or clinical consequence cannot be inferred without wet-lab assays.', 14, y, { maxWidth: 180 });
-
-    doc.save(`BioCrystal_DNA_Report_Pos${mutationDiff?.position || 'ref'}.pdf`);
   };
 
+  // Action: Export Variants as CSV
+  const handleExportCsv = () => {
+    const mutations = analysisResult.alignment.mutations || [];
+    const headers = [
+      'Variant_ID',
+      'Reference_Position',
+      'Observed_Position',
+      'Reference_Bases',
+      'Observed_Bases',
+      'Variant_Type',
+      'Original_Codon',
+      'Observed_Codon',
+      'Amino_Acid_Change',
+      'Consequence_Category',
+      'Is_Transition',
+      'Is_Transversion',
+      'Gene',
+      'Accession',
+      'Revision',
+    ];
+
+    const rows = mutations.map((m, idx) => {
+      const refB = m.reference_bases || m.original_base || '';
+      const obsB = m.observed_bases || m.observed_base || '';
+      const mType = m.mutation_type || m.type || '';
+      const origCodon = m.original_codon || m.reference_codon || '';
+      const obsCodon = m.observed_codon || '';
+      const aaChg =
+        m.amino_acid_change ||
+        (m.original_amino_acid && m.observed_amino_acid
+          ? `${m.original_amino_acid.code3}->${m.observed_amino_acid.code3}`
+          : '');
+
+      return [
+        `VAR-${idx + 1}`,
+        m.reference_position,
+        m.observed_position || '',
+        `"${refB}"`,
+        `"${obsB}"`,
+        mType,
+        `"${origCodon}"`,
+        `"${obsCodon}"`,
+        `"${aaChg}"`,
+        `"${m.category_label || m.category}"`,
+        m.is_transition ? 'TRUE' : 'FALSE',
+        m.is_transversion ? 'TRUE' : 'FALSE',
+        gene,
+        accession,
+        revision,
+      ];
+    });
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const a = document.createElement('a');
+    a.href = encodedUri;
+    a.download = `BioCrystal_${gene}_Variants_Rev${revision}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const mutations = analysisResult.alignment.mutations || [];
+
   return (
-    <div className="h-full flex flex-col bg-[#080808] overflow-y-auto p-6 max-w-5xl mx-auto space-y-5 select-none font-mono">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between pb-3 border-b border-[#292929] gap-4">
-        <div>
-          <h2 className="text-sm font-bold text-[#f5f5f5] uppercase tracking-wider flex items-center space-x-2">
-            <FileText className="w-4 h-4 text-[#ff7417]" />
-            <span>Scientific Analysis & Mutation Consequence Report</span>
-          </h2>
-          <p className="text-[11px] text-[#a3a3a3] mt-0.5 font-sans">
-            Formal computational biology evaluation report conforming to molecular genetics standards.
-          </p>
+    <div className="flex-1 flex flex-col h-full bg-[#090A0C] text-[#F4F4F2] font-mono select-none overflow-hidden">
+      {/* ===================================================================
+          1. REPORT ACTION TOOLBAR
+      =================================================================== */}
+      <div className="border-b border-[#2A2D33] px-5 py-2.5 bg-[#111316] flex items-center justify-between shrink-0 flex-wrap gap-2">
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
+            <FileText className="w-4 h-4 text-[#FF6500]" />
+            <span className="text-xs font-bold uppercase tracking-wider text-[#F4F4F2]">
+              Destination 3: Scientific Report
+            </span>
+          </div>
+
+          <span className="text-[#3D424B]">|</span>
+
+          <div className="flex items-center space-x-2 text-[11px]">
+            <span className="px-2 py-0.5 rounded bg-[#17191D] text-[#35C98A] border border-[#2A2D33] font-bold">
+              Revision {revision}
+            </span>
+            <span className="text-[#70757D]">
+              Exact 4-Page SwissADME Architecture
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center space-x-2 text-xs">
+        {/* Action Buttons */}
+        <div className="flex items-center space-x-2">
+          {/* Download 4-Page PDF */}
           <button
-            onClick={() => window.print()}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#151515] hover:bg-[#1c1c1c] text-[#f5f5f5] border border-[#292929] transition-all cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print</span>
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                const res = await fetch('/api/export-pdf', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    original_sequence: originalSequence,
-                    complementary_sequence: compOrig,
-                    gc_percent: validation.gcPercent,
-                    at_percent: validation.atPercent,
-                    melting_temp: validation.meltingTemperature,
-                    molecular_weight_kda: validation.molecularWeightKDa,
-                    mutation_diff: mutationDiff,
-                    reference_sequence: referenceSeq ? referenceSeq.sequence : null,
-                    mutations_list: analysisResult?.alignment?.mutations,
-                    structure_mapping: analysisResult?.structure_mapping,
-                    gene: analysisResult?.structure_mapping?.provenance?.title,
-                    organism: analysisResult?.structure_mapping?.provenance?.organism,
-                    analysis_result: analysisResult,
-                  }),
-                });
-                if (res.ok) {
-                  const blob = await res.blob();
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'BioCrystal_Scientific_DNA_Report.pdf';
-                  document.body.appendChild(a);
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                  return;
-                }
-              } catch {
-                // fallback to client-side jsPDF
-              }
-              exportPDF();
-            }}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#1c1c1c] text-[#36c5e8] border border-[#292929] hover:border-[#36c5e8]/50 transition-all cursor-pointer"
-            title="Download SwissADME-style Scientific Report (ReportLab)"
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={!pdfBlob || isLoadingPdf || isDownloading}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer shadow-md ${
+              pdfBlob && !isLoadingPdf && !isDownloading
+                ? 'bg-gradient-to-r from-[#FF6500] to-[#E05300] hover:from-[#FF7A1A] hover:to-[#FF6500] text-white shadow-[#FF6500]/20'
+                : 'bg-[#1D2025] text-[#70757D] border border-[#2A2D33] cursor-not-allowed opacity-50'
+            }`}
+            title="Download the full 4-page SwissADME-style PDF report"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>ReportLab PDF</span>
+            <span>{isDownloading ? 'Downloading...' : 'Download 4-Page PDF'}</span>
           </button>
+
+          {/* Export CSV */}
           <button
-            onClick={exportPDF}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded bg-[#f5f5f5] hover:bg-white text-[#080808] font-bold transition-all cursor-pointer shadow-sm"
+            type="button"
+            onClick={handleExportCsv}
+            disabled={mutations.length === 0}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#17191D] hover:bg-[#1D2025] text-[#35C98A] border border-[#2A2D33] text-xs font-bold transition-all cursor-pointer"
+            title="Export all detected mutations as CSV"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Export CSV</span>
           </button>
+
+          {/* Refresh Report */}
+          <button
+            type="button"
+            onClick={fetchPdfReport}
+            disabled={isLoadingPdf}
+            className="p-1.5 rounded bg-[#17191D] hover:bg-[#1D2025] text-[#A0A3AA] hover:text-[#F4F4F2] border border-[#2A2D33] text-xs transition-all cursor-pointer"
+            title="Refresh PDF from backend"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isLoadingPdf ? 'animate-spin text-[#FF6500]' : ''}`} />
+          </button>
+
+          {/* Open in New Tab */}
+          {pdfUrl && (
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded bg-[#17191D] hover:bg-[#1D2025] text-[#22C7E8] border border-[#2A2D33] text-xs transition-all cursor-pointer"
+              title="Open full PDF in a new browser tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
       </div>
 
-      {/* Report Document Container */}
-      <div className="bg-[#151515] border border-[#292929] rounded p-6 space-y-5 shadow-lg">
-        {/* Document Title Banner */}
-        <div className="pb-3 border-b border-[#292929] flex justify-between items-start">
-          <div>
-            <span className="text-[10px] uppercase tracking-wider text-[#ff7417] font-bold block mb-1">
-              BioCrystal 3D Computational Report
+      {/* ===================================================================
+          2. STALE NOTICE (If sequence has unanalysed edits)
+      =================================================================== */}
+      {isModified && (
+        <div className="bg-[#F3B347]/10 border-b border-[#F3B347]/30 px-5 py-2.5 flex items-center justify-between text-xs shrink-0 flex-wrap gap-2">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 text-[#F3B347] shrink-0" />
+            <span className="text-[#F3B347] font-semibold">
+              Warning: Sequence has {editHistory.length} uncommitted edit(s).
             </span>
-            <h3 className="text-base font-bold text-[#f5f5f5]">
-              DNA Sequence & Molecular Mutation Assessment
-            </h3>
-            <p className="text-[11px] text-[#a3a3a3] mt-0.5 font-sans">
-              Reference: {referenceSeq ? referenceSeq.name : 'Canonical Wild-Type'} &bull; Database: {referenceSeq?.database || 'NCBI GenBank'}
-            </p>
-          </div>
-          <div className="text-right text-[11px] text-[#686868]">
-            <div>Date: {reportDate}</div>
-            <div>Model: B-DNA Canonical</div>
-          </div>
-        </div>
-
-        {/* 1. Sequence & Chemical Profile */}
-        <div className="space-y-2.5">
-          <h4 className="text-xs font-bold text-[#f5f5f5] uppercase tracking-wider">
-            1. Sequence Properties & Biophysics
-          </h4>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-            <div className="bg-[#101010] p-2.5 rounded border border-[#292929]">
-              <span className="text-[#686868] text-[10px] block">Length</span>
-              <span className="font-bold text-[#36c5e8] text-sm">{originalSequence.length} bp</span>
-            </div>
-            <div className="bg-[#101010] p-2.5 rounded border border-[#292929]">
-              <span className="text-[#686868] text-[10px] block">GC Content</span>
-              <span className="font-bold text-[#42cf91] text-sm">{validation.gcPercent}%</span>
-            </div>
-            <div className="bg-[#101010] p-2.5 rounded border border-[#292929]">
-              <span className="text-[#686868] text-[10px] block">AT Content</span>
-              <span className="font-bold text-[#ff7417] text-sm">{validation.atPercent}%</span>
-            </div>
-            <div className="bg-[#101010] p-2.5 rounded border border-[#292929]">
-              <span className="text-[#686868] text-[10px] block">Melting Temp</span>
-              <span className="font-bold text-[#f4b942] text-sm">{validation.meltingTemperature} °C</span>
-            </div>
+            <span className="text-[#A0A3AA] hidden md:inline">
+              This preview reflects Revision {revision} (from your last analysis run).
+            </span>
           </div>
 
-          {/* Sequences */}
-          <div className="space-y-1.5 pt-1 text-xs">
-            <div className="p-2 rounded bg-[#101010] border border-[#292929]">
-              <span className="text-[#686868] text-[10px] block mb-0.5">
-                Coding Sense Strand (5' &rarr; 3'):
-              </span>
-              <span className="text-[#36c5e8] tracking-wider break-all">{originalSequence}</span>
-            </div>
-            <div className="p-2 rounded bg-[#101010] border border-[#292929]">
-              <span className="text-[#686868] text-[10px] block mb-0.5">
-                Antiparallel Complementary Strand (3' &larr; 5'):
-              </span>
-              <span className="text-[#a78bfa] tracking-wider break-all">{compOrig}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Mutation Analysis */}
-        <div className="space-y-2.5 pt-2 border-t border-[#292929]">
-          <h4 className="text-xs font-bold text-[#f5f5f5] uppercase tracking-wider">
-            2. Genetic Mutation Consequence Evaluation
-          </h4>
-
-          {mutationDiff ? (
-            <div className="bg-[#101010] border border-[#292929] rounded p-3.5 space-y-3 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center space-x-2">
-                  <span className="text-[#686868]">Classification:</span>
-                  <span
-                    className={`font-bold px-2 py-0.5 rounded text-xs ${
-                      mutationDiff.category === 'synonymous'
-                        ? 'bg-[#42cf91]/15 text-[#42cf91] border border-[#42cf91]/30'
-                        : mutationDiff.category === 'nonsense'
-                        ? 'bg-[#ff626b]/15 text-[#ff626b] border border-[#ff626b]/30'
-                        : 'bg-[#f4b942]/15 text-[#f4b942] border border-[#f4b942]/30'
-                    }`}
-                  >
-                    {mutationDiff.categoryLabel}
-                  </span>
-                </div>
-
-                <div className="text-[#a3a3a3]">
-                  Target Position: <span className="text-[#ff7417] font-bold">#{mutationDiff.position}</span>
-                </div>
-              </div>
-
-              {/* Codon & Translation Table */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="p-2.5 rounded bg-[#151515] border border-[#292929] space-y-0.5">
-                  <span className="text-[10px] text-[#686868] uppercase font-semibold">Reference State</span>
-                  <div className="text-xs text-[#36c5e8] font-bold">
-                    Codon: {mutationDiff.originalCodon || 'N/A'}
-                  </div>
-                  <div className="text-[11px] text-[#a3a3a3]">
-                    Amino Acid: {mutationDiff.originalAminoAcid?.name} ({mutationDiff.originalAminoAcid?.code3})
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded bg-[#151515] border border-[#292929] space-y-0.5">
-                  <span className="text-[10px] text-[#ff7417] uppercase font-semibold">Mutated State</span>
-                  <div className="text-xs text-[#ff7417] font-bold">
-                    Codon: {mutationDiff.mutatedCodon || 'N/A'}
-                  </div>
-                  <div className="text-[11px] text-[#a3a3a3]">
-                    Amino Acid: {mutationDiff.mutatedAminoAcid?.name} ({mutationDiff.mutatedAminoAcid?.code3})
-                  </div>
-                </div>
-              </div>
-
-              {/* Biological Narrative */}
-              <div className="p-2.5 rounded bg-[#151515] border border-[#292929] text-xs text-[#a3a3a3] leading-relaxed">
-                <p className="font-semibold text-[#f5f5f5] mb-0.5">Computational Interpretation:</p>
-                <p className="text-[11px] text-[#a3a3a3] font-sans">{mutationDiff.description}</p>
-              </div>
-
-              {/* Suggested Reference Restoration */}
-              <div className="p-2.5 rounded bg-[#151515] border border-[#292929] text-xs text-[#42cf91] flex items-center space-x-2">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span>
-                  Suggested Reference Restoration: Revert position #{mutationDiff.position} from {mutationDiff.newBase || mutationDiff.insertedBases || '-'} &rarr; {mutationDiff.originalBase || '-'}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="p-3.5 rounded bg-[#101010] border border-[#292929] text-xs text-[#686868] font-sans">
-              No mutation currently introduced. To evaluate consequences, navigate to the <strong>Mutation Laboratory</strong> or select a nucleotide in the 3D model.
-            </div>
+          {onReanalyse && (
+            <button
+              type="button"
+              onClick={onReanalyse}
+              disabled={isReanalysing}
+              className="flex items-center space-x-1.5 px-3 py-1 rounded bg-[#FF6500] hover:bg-[#FF7A1A] text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+            >
+              {isReanalysing ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Reanalysing...</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reanalyse & Update Report</span>
+                </>
+              )}
+            </button>
           )}
         </div>
+      )}
 
-        {/* 2b. Structural Mapping Profile */}
-        {analysisResult?.structure_mapping && (
-          <div className="space-y-2.5 pt-2 border-t border-[#292929]">
-            <h4 className="text-xs font-bold text-[#f5f5f5] uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-[#22C7E8]" />
-              <span>3. 3D Macromolecular Structural Mapping & Biological Impact</span>
-            </h4>
-
-            {analysisResult.structure_mapping.mapped && analysisResult.structure_mapping.provenance ? (
-              <div className="bg-[#101010] border border-[#292929] rounded p-3.5 space-y-3 text-xs">
-                <div className="flex flex-wrap items-center justify-between text-[11px] pb-2 border-b border-[#292929]">
-                  <span className="font-bold text-[#f5f5f5]">
-                    PDB ID: {analysisResult.structure_mapping.pdb_id} (Chain {analysisResult.structure_mapping.chain})
-                  </span>
-                  <span className="text-[#35C98A]">
-                    {analysisResult.structure_mapping.provenance.method} ({analysisResult.structure_mapping.provenance.resolution})
-                  </span>
+      {/* ===================================================================
+          3. MAIN PREVIEW AREA
+      =================================================================== */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Left Information Strip */}
+        <div className="w-64 border-r border-[#2A2D33] bg-[#111316] p-4 flex flex-col justify-between shrink-0 hidden md:flex text-xs space-y-4 overflow-y-auto">
+          <div className="space-y-4">
+            <div>
+              <span className="text-[10px] text-[#70757D] uppercase font-bold block mb-1">
+                Report Metadata
+              </span>
+              <div className="space-y-2 bg-[#090A0C] p-2.5 rounded border border-[#2A2D33] text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-[#70757D]">Target Gene:</span>
+                  <span className="font-bold text-[#F4F4F2]">{gene}</span>
                 </div>
-
-                <div className="space-y-2">
-                  {analysisResult.structure_mapping.mappings.map((m, idx) => (
-                    <div key={idx} className="p-2.5 rounded bg-[#151515] border border-[#292929] space-y-1">
-                      <div className="flex justify-between font-bold">
-                        <span className="text-[#ff7417]">
-                          Residue #{m.residue_number} ({m.original_residue} &rarr; {m.mutated_residue})
-                        </span>
-                        <span className="text-[#35C98A] text-[10px]">{m.impact_label}</span>
-                      </div>
-                      <div className="text-[11px] text-[#a3a3a3]">
-                        <strong>Region:</strong> {m.structural_region}
-                      </div>
-                      <div className="text-[10px] text-[#70757D] font-sans">
-                        {m.impact_rationale}
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex justify-between">
+                  <span className="text-[#70757D]">Accession:</span>
+                  <span className="text-[#22C7E8] font-mono text-[10px]">{accession}</span>
                 </div>
-
-                <div className="pt-1.5 text-[10px] text-[#70757D] font-sans">
-                  <strong>Provenance Note:</strong> {analysisResult.structure_mapping.provenance.disclaimer}
+                <div className="flex justify-between">
+                  <span className="text-[#70757D]">Organism:</span>
+                  <span className="text-[#F4F4F2]">{organism}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#70757D]">Revision:</span>
+                  <span className="text-[#35C98A] font-bold">Rev {revision}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#70757D]">Total Pages:</span>
+                  <span className="text-[#FF6500] font-bold">4 Pages (A4)</span>
                 </div>
               </div>
-            ) : (
-              <div className="p-3.5 rounded bg-[#101010] border border-[#292929] text-xs text-[#70757D] font-sans">
-                {analysisResult.structure_mapping.reason || 'No 3D structural mapping available for this sequence.'}
+            </div>
+
+            <div>
+              <span className="text-[10px] text-[#70757D] uppercase font-bold block mb-1">
+                Report Page Guide
+              </span>
+              <div className="space-y-1.5 text-[10px] text-[#A0A3AA]">
+                <div className="p-2 rounded bg-[#090A0C] border border-[#2A2D33]">
+                  <span className="text-[#35C98A] font-bold block">Page 1: Overview & Metrics</span>
+                  <span>Input identity, GC%, Tm, length & factual synthesis.</span>
+                </div>
+                <div className="p-2 rounded bg-[#090A0C] border border-[#2A2D33]">
+                  <span className="text-[#22C7E8] font-bold block">Page 2: Pairwise Alignment</span>
+                  <span>Needleman-Wunsch ribbon, difference map & mutation table.</span>
+                </div>
+                <div className="p-2 rounded bg-[#090A0C] border border-[#2A2D33]">
+                  <span className="text-[#A78BFA] font-bold block">Page 3: Details & Audit</span>
+                  <span>Variant cards, sequence edit audit & PDB 3D mapping.</span>
+                </div>
+                <div className="p-2 rounded bg-[#090A0C] border border-[#2A2D33]">
+                  <span className="text-[#FF6500] font-bold block">Page 4: Methodology & Legal</span>
+                  <span>Algorithms, scientific limitations & SwissADME notice.</span>
+                </div>
               </div>
-            )}
+            </div>
           </div>
-        )}
 
-        {/* 3. Authoritative Biological Data Sources */}
-        <div className="space-y-1.5 pt-2 border-t border-[#292929] text-xs">
-          <h4 className="font-bold text-[#f5f5f5] uppercase tracking-wider text-[10px] flex items-center space-x-1.5">
-            <Database className="w-3.5 h-3.5 text-[#ff7417]" />
-            <span>Authoritative Data Sources</span>
-          </h4>
-          <ul className="text-[#a3a3a3] space-y-0.5 pl-4 list-disc text-[11px] font-sans">
-            <li>NCBI Nucleotide & RefSeq Database (National Center for Biotechnology Information).</li>
-            <li>Ensembl Genome Browser (EMBL-EBI / Wellcome Sanger Institute).</li>
-            <li>RCSB Protein Data Bank (PDB structures: 1BNA, 1A3N, 1TUP).</li>
-            <li>Standard Genetic Code (NCBI translation table 1).</li>
-          </ul>
+          <div className="p-2.5 rounded bg-[#090A0C] border border-[#2A2D33] text-[10px] text-[#70757D] space-y-1">
+            <span className="font-bold text-[#A0A3AA] block">ReportLab 5.x Engine</span>
+            <span>Strict vertical height budgeting ensures exact 4-page pagination.</span>
+          </div>
         </div>
 
-        {/* 4. Modeling Limitations & Disclaimers */}
-        <div className="space-y-1.5 pt-2 border-t border-[#292929] text-[10px] text-[#686868] leading-relaxed font-sans">
-          <h4 className="font-bold text-[#a3a3a3] uppercase tracking-wider text-[10px]">
-            Modeling Assumptions & Scientific Disclaimers
-          </h4>
-          <p>
-            The 3D model visualizes canonical right-handed B-DNA geometry with 3.4 Å axial rise per base pair, 36.0° helical rotation, and antiparallel strand geometry with a 144° minor groove angle.
-          </p>
-          <p>
-            Computational translation reflects standard genetic code assignments. In-silico neutrality (e.g. synonymous mutations) does not preclude potential regulatory or splicing consequences in vivo.
-          </p>
+        {/* Central PDF Viewer Frame */}
+        <div className="flex-1 bg-[#1A1D20] flex items-center justify-center p-2 relative overflow-hidden">
+          {isLoadingPdf ? (
+            <div className="flex flex-col items-center justify-center space-y-3 text-xs text-[#A0A3AA]">
+              <span className="w-8 h-8 border-3 border-[#FF6500]/30 border-t-[#FF6500] rounded-full animate-spin" />
+              <span className="font-bold text-[#F4F4F2]">
+                Rendering publication-grade 4-page PDF report...
+              </span>
+              <span className="text-[11px] text-[#70757D]">
+                ReportLab Biopython engine running at /api/export-pdf
+              </span>
+            </div>
+          ) : pdfError ? (
+            <div className="max-w-md bg-[#111316] border border-[#F06464]/30 rounded-lg p-5 text-center space-y-3">
+              <AlertTriangle className="w-8 h-8 text-[#F06464] mx-auto" />
+              <div className="font-bold text-[#F06464] text-sm">Failed to Generate PDF Report</div>
+              <p className="text-xs text-[#A0A3AA]">{pdfError}</p>
+              <button
+                type="button"
+                onClick={fetchPdfReport}
+                className="px-4 py-1.5 rounded bg-[#FF6500] hover:bg-[#FF7A1A] text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                Retry Generation
+              </button>
+            </div>
+          ) : pdfUrl ? (
+            <iframe
+              src={pdfUrl}
+              title="BioCrystal 3D Four-Page Scientific PDF Report"
+              className="w-full h-full rounded border border-[#2A2D33] bg-white shadow-2xl"
+            />
+          ) : null}
         </div>
       </div>
     </div>

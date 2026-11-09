@@ -4,11 +4,7 @@ import './App.css';
 import { LandingPage } from './components/ui/LandingPage';
 import { SidebarNav, AppNavTab } from './components/ui/SidebarNav';
 import { SequenceInputWorkspace } from './components/ui/SequenceInputWorkspace';
-import { MolecularSurfaceViewer } from './components/3d/MolecularSurfaceViewer';
-import { StructuralComparisonView } from './components/3d/StructuralComparisonView';
-import { MutationNavigator } from './components/ui/MutationNavigator';
-import { MutationDetailsPanel } from './components/ui/MutationDetailsPanel';
-import { AlignedSequenceRibbon } from './components/ui/AlignedSequenceRibbon';
+import { ResultsAndEditView } from './components/ui/ResultsAndEditView';
 import { ReportView } from './components/ui/ReportView';
 import { HelpLimitationsModal } from './components/ui/HelpLimitationsModal';
 
@@ -16,8 +12,8 @@ import {
   AnalysisContext,
   AnalysisOptions,
   FullAnalysisResult,
-  AlignmentMutation,
   BackendStatus,
+  SequenceEditRecord,
 } from './types/dna';
 import {
   compareSequencesAPI,
@@ -25,21 +21,21 @@ import {
   validateSequenceAPI,
   checkBackendHealthAPI,
 } from './services/apiService';
-import { validateDNASequence } from './services/bioinformatics';
 import {
   Dna,
   FileText,
   HelpCircle,
   RotateCcw,
+  GitCompare,
 } from 'lucide-react';
 
 export function App() {
-  // Application Stage: Landing -> Stage A (Input) -> Stage B (Analysis)
+  // Application Stage: Landing Page -> Workstation (Analyze / Results / Report)
   const [workspaceLaunched, setWorkspaceLaunched] = useState(false);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
 
-  // Active navigation tab
-  const [activeTab, setActiveTab] = useState<AppNavTab>('input');
+  // Active navigation tab: strictly 'analyze' | 'results' | 'report'
+  const [activeTab, setActiveTab] = useState<AppNavTab>('analyze');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Backend Health State (CONNECTING, ONLINE, OFFLINE, ERROR)
@@ -74,10 +70,21 @@ export function App() {
 
   // Analysis Progress and Error States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isReanalysing, setIsReanalysing] = useState(false);
   const [analysisStageText, setAnalysisStageText] = useState('');
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-  // Analysis Data State
+  // =========================================================================
+  // Three-State Sequence Model & Edit History
+  // =========================================================================
+  const [originalSubmittedSequence, setOriginalSubmittedSequence] = useState<string>('');
+  const [currentEditedSequence, setCurrentEditedSequence] = useState<string>('');
+  const [lastAnalysedSequence, setLastAnalysedSequence] = useState<string>('');
+  const [referenceSequence, setReferenceSequence] = useState<string>('');
+  const [editHistory, setEditHistory] = useState<SequenceEditRecord[]>([]);
+  const [revision, setRevision] = useState<number>(1);
+
+  // Analysis Context & Results State
   const [analysisContext, setAnalysisContext] = useState<AnalysisContext>({
     organism: 'Homo sapiens',
     gene: 'KRAS',
@@ -90,12 +97,11 @@ export function App() {
 
   const [analysisResult, setAnalysisResult] = useState<FullAnalysisResult | null>(null);
   const [pdbData, setPdbData] = useState<string | null>(null);
-  const [selectedMutationIndex, setSelectedMutationIndex] = useState<number | null>(null);
 
   // Help & Limitations Modal
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // Handle Real Analysis Workflow
+  // Handle Initial Analysis Workflow (from Analyze page)
   const handleAnalyze = useCallback(
     async (params: {
       referenceSequence: string;
@@ -107,7 +113,7 @@ export function App() {
       setIsAnalyzing(true);
 
       try {
-        setAnalysisStageText('Validating reference and observed DNA sequences...');
+        setAnalysisStageText('Validating reference and mutated sequences...');
         await validateSequenceAPI(params.referenceSequence);
         await validateSequenceAPI(params.observedSequence);
 
@@ -115,20 +121,22 @@ export function App() {
         await new Promise((r) => setTimeout(r, 200));
 
         setAnalysisStageText('Detecting discrete mutation events and indels...');
-        await new Promise((r) => setTimeout(r, 200));
-
-        setAnalysisStageText('Translating coding sequence in selected reading frame...');
         const result = await compareSequencesAPI({
           reference_sequence: params.referenceSequence,
           observed_sequence: params.observedSequence,
           reading_frame: params.context.readingFrame >= 0 ? params.context.readingFrame : 0,
-          table_id: params.context.geneticCode === 'vertebrate_mitochondrial' ? 2 : params.context.geneticCode === 'bacterial_plastid' ? 11 : 1,
+          table_id:
+            params.context.geneticCode === 'vertebrate_mitochondrial'
+              ? 2
+              : params.context.geneticCode === 'bacterial_plastid'
+              ? 11
+              : 1,
           gene: params.context.gene,
           pdb_id: params.context.accession,
           is_coding: params.context.sequenceType === 'coding',
         });
 
-        setAnalysisStageText('Mapping variants to 3D macromolecular crystal coordinates...');
+        setAnalysisStageText('Mapping variants to macromolecular coordinates...');
         let pdbContent: string | null = null;
         if (result.structure_mapping?.mapped && result.structure_mapping.pdb_id) {
           try {
@@ -138,10 +146,17 @@ export function App() {
           }
         }
 
-        setAnalysisStageText('Preparing scientific molecular workspace...');
-        await new Promise((r) => setTimeout(r, 250));
+        setAnalysisStageText('Initializing Results & Edit workstation...');
+        await new Promise((r) => setTimeout(r, 200));
 
-        // Save complete scientific state
+        // Save three-state sequence model
+        setReferenceSequence(params.referenceSequence);
+        setOriginalSubmittedSequence(params.observedSequence);
+        setCurrentEditedSequence(params.observedSequence);
+        setLastAnalysedSequence(params.observedSequence);
+        setEditHistory([]);
+        setRevision(1);
+
         setAnalysisContext(params.context);
         setAnalysisResult({
           ...result,
@@ -149,19 +164,12 @@ export function App() {
         });
         setPdbData(pdbContent);
 
-        // Select first mutation by default if present
-        if (result.alignment.mutations.length > 0) {
-          setSelectedMutationIndex(0);
-        } else {
-          setSelectedMutationIndex(null);
-        }
-
         setHasAnalyzed(true);
-        setActiveTab('molecular');
+        setActiveTab('results'); // Auto-transition to Destination 2
       } catch (err: any) {
         console.error('Analysis error:', err);
         setAnalysisError(
-          err.message || 'An unexpected error occurred during sequence alignment or structural mapping.'
+          err.message || 'An error occurred during sequence alignment or structural mapping.'
         );
       } finally {
         setIsAnalyzing(false);
@@ -171,36 +179,128 @@ export function App() {
     []
   );
 
-  // New Analysis Reset
+  // Apply a Single In-Memory Edit to currentEditedSequence
+  const handleApplyEdit = useCallback(
+    (edit: { position: number; oldBases: string; newBases: string; action: string }) => {
+      const pos = edit.position; // 1-based index
+      const oldSeq = currentEditedSequence;
+      if (pos < 1 || pos > oldSeq.length) return;
+
+      // Replace nucleotide base at target position
+      const newSeq =
+        oldSeq.slice(0, pos - 1) + edit.newBases + oldSeq.slice(pos - 1 + edit.oldBases.length);
+      setCurrentEditedSequence(newSeq);
+
+      // Add to edit history audit trail
+      const newRecord: SequenceEditRecord = {
+        id: `edit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString(),
+        position: edit.position,
+        oldBases: edit.oldBases,
+        newBases: edit.newBases,
+        action: edit.action,
+        reason: 'User Base Edit',
+      };
+      setEditHistory((prev) => [newRecord, ...prev]);
+    },
+    [currentEditedSequence]
+  );
+
+  // Undo Last Sequence Edit
+  const handleUndoLastEdit = useCallback(() => {
+    if (editHistory.length === 0) return;
+    const [lastEdit, ...remainingEdits] = editHistory;
+
+    const pos = lastEdit.position;
+    const cur = currentEditedSequence;
+    if (pos >= 1 && pos <= cur.length + 1) {
+      const revertedSeq =
+        cur.slice(0, pos - 1) + lastEdit.oldBases + cur.slice(pos - 1 + lastEdit.newBases.length);
+      setCurrentEditedSequence(revertedSeq);
+    }
+    setEditHistory(remainingEdits);
+  }, [editHistory, currentEditedSequence]);
+
+  // Discard All Pending Edits (Revert to last analysed sequence)
+  const handleDiscardEdits = useCallback(() => {
+    setCurrentEditedSequence(lastAnalysedSequence);
+    setEditHistory([]);
+  }, [lastAnalysedSequence]);
+
+  // Reanalyse Edited Sequence (when currentEditedSequence !== lastAnalysedSequence)
+  const handleReanalyse = useCallback(async () => {
+    if (!analysisResult) return;
+    setIsReanalysing(true);
+
+    try {
+      const result = await compareSequencesAPI({
+        reference_sequence: referenceSequence,
+        observed_sequence: currentEditedSequence,
+        reading_frame: analysisContext.readingFrame >= 0 ? analysisContext.readingFrame : 0,
+        table_id:
+          analysisContext.geneticCode === 'vertebrate_mitochondrial'
+            ? 2
+            : analysisContext.geneticCode === 'bacterial_plastid'
+            ? 11
+            : 1,
+        gene: analysisContext.gene,
+        pdb_id: analysisContext.accession,
+        is_coding: analysisContext.sequenceType === 'coding',
+      });
+
+      let pdbContent = pdbData;
+      if (result.structure_mapping?.mapped && result.structure_mapping.pdb_id && !pdbContent) {
+        try {
+          pdbContent = await fetchPdbAPI(result.structure_mapping.pdb_id);
+          setPdbData(pdbContent);
+        } catch (e) {
+          console.warn('PDB retrieval notice:', e);
+        }
+      }
+
+      setAnalysisResult({
+        ...result,
+        pdb_data: pdbContent,
+      });
+
+      setLastAnalysedSequence(currentEditedSequence);
+      setRevision((prev) => prev + 1);
+    } catch (err: any) {
+      console.error('Reanalysis error:', err);
+      alert(`Reanalysis failed: ${err.message || 'Network error'}`);
+    } finally {
+      setIsReanalysing(false);
+    }
+  }, [
+    analysisResult,
+    referenceSequence,
+    currentEditedSequence,
+    analysisContext,
+    pdbData,
+  ]);
+
+  // Reset to Clean Analysis (Start Over)
   const handleNewAnalysis = () => {
     setHasAnalyzed(false);
     setAnalysisResult(null);
     setPdbData(null);
-    setSelectedMutationIndex(null);
-    setActiveTab('input');
+    setOriginalSubmittedSequence('');
+    setCurrentEditedSequence('');
+    setLastAnalysedSequence('');
+    setEditHistory([]);
+    setRevision(1);
+    setActiveTab('analyze');
     setAnalysisError(null);
   };
 
-  // Determine currently selected mutation and mapped residue
-  const selectedMutation: AlignmentMutation | null =
-    analysisResult && selectedMutationIndex !== null && analysisResult.alignment.mutations[selectedMutationIndex]
-      ? analysisResult.alignment.mutations[selectedMutationIndex]
-      : null;
+  const isSequenceModified = currentEditedSequence !== lastAnalysedSequence;
 
-  const mappedResidues = analysisResult?.structure_mapping?.mappings || [];
-  const selectedMappedResidue =
-    selectedMutation
-      ? mappedResidues.find((r) => r.mutation_ref_pos === selectedMutation.reference_position) || null
-      : mappedResidues.length > 0
-      ? mappedResidues[0]
-      : null;
-
-  // 1. Initial State: Unlaunched -> Landing Page
+  // 1. Initial State: Landing Page
   if (!workspaceLaunched) {
     return <LandingPage onLaunch={() => setWorkspaceLaunched(true)} />;
   }
 
-  // 2. Main Workstation Shell (Stage A or Stage B)
+  // 2. Main Workstation Shell (Analyze, Results & Edit, Report)
   return (
     <div className="w-full h-screen flex flex-col bg-[#090A0C] text-[#F4F4F2] select-none overflow-hidden font-mono">
       {/* Top Application Command Bar */}
@@ -216,23 +316,32 @@ export function App() {
               </span>
               <span className="text-[10px] text-[#70757D]">/</span>
               <span className="text-[10px] text-[#A0A3AA] uppercase">
-                {hasAnalyzed ? `Stage B: ${analysisContext.gene} Analysis` : 'Stage A: Sequence Input'}
+                {activeTab === 'analyze'
+                  ? 'Destination 1: Analyze'
+                  : activeTab === 'results'
+                  ? `Destination 2: Results & Edit (${analysisContext.gene})`
+                  : `Destination 3: Scientific Report`}
               </span>
               {hasAnalyzed && analysisResult && (
                 <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#35C98A]/15 text-[#35C98A] border border-[#35C98A]/30">
                   {analysisResult.alignment.mutation_count} Variant(s)
                 </span>
               )}
+              {isSequenceModified && (
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#F3B347]/15 text-[#F3B347] border border-[#F3B347]/30 animate-pulse">
+                  Modified
+                </span>
+              )}
             </div>
             <p className="text-[9px] text-[#70757D] font-sans">
-              Computational Biology & Macromolecular Surface Workstation
+              Intelligent DNA Mutation Detection & Macromolecular Workstation
             </p>
           </div>
         </div>
 
         {/* Top Header Actions */}
         <div className="flex items-center space-x-2 text-xs">
-          {/* Real Backend Connection Indicator */}
+          {/* Backend Status Indicator */}
           <div className="flex items-center space-x-1.5 px-2 py-1 rounded bg-[#17191D] border border-[#2A2D33] text-[10px]">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -266,17 +375,40 @@ export function App() {
             )}
           </div>
 
+          {/* Quick Tab Jump Buttons (if analyzed) */}
           {hasAnalyzed && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('report')}
-              className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#17191D] hover:bg-[#1D2025] text-[#F4F4F2] border border-[#2A2D33] transition-all cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 text-[#22C7E8]" />
-              <span>Report</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab('results')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs transition-all cursor-pointer border ${
+                  activeTab === 'results'
+                    ? 'bg-[#FF6500]/15 text-[#FF6500] border-[#FF6500]/40 font-bold'
+                    : 'bg-[#17191D] hover:bg-[#1D2025] text-[#A0A3AA] border-[#2A2D33]'
+                }`}
+                title="Go to Results & Edit workspace"
+              >
+                <GitCompare className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Results & Edit</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('report')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs transition-all cursor-pointer border ${
+                  activeTab === 'report'
+                    ? 'bg-[#FF6500]/15 text-[#FF6500] border-[#FF6500]/40 font-bold'
+                    : 'bg-[#17191D] hover:bg-[#1D2025] text-[#A0A3AA] border-[#2A2D33]'
+                }`}
+                title="Go to 4-Page Scientific PDF Report"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Report</span>
+              </button>
+            </>
           )}
 
+          {/* Help Modal Trigger */}
           <button
             type="button"
             onClick={() => setIsHelpOpen(true)}
@@ -286,12 +418,13 @@ export function App() {
             <HelpCircle className="w-4 h-4" />
           </button>
 
+          {/* New Analysis Reset */}
           {hasAnalyzed && (
             <button
               type="button"
               onClick={handleNewAnalysis}
               className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#17191D] hover:bg-[#1D2025] text-[#35C98A] border border-[#2A2D33] transition-all cursor-pointer"
-              title="Reset and start new sequence analysis"
+              title="Reset and start new analysis"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">New Analysis</span>
@@ -302,32 +435,28 @@ export function App() {
 
       {/* Main Workspace Body */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Navigation Sidebar (Collapsible & Non-Obstructing) */}
+        {/* Left Navigation Sidebar (Collapsible, Exactly 3 Destinations) */}
         <SidebarNav
           activeTab={activeTab}
-          setActiveTab={(tab) => {
-            if (tab === 'help') {
-              setIsHelpOpen(true);
-            } else {
-              setActiveTab(tab);
-            }
-          }}
+          setActiveTab={setActiveTab}
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
           hasAnalysisResults={hasAnalyzed}
           hasStructureMapped={analysisResult?.structure_mapping?.mapped ?? false}
           onNewAnalysis={handleNewAnalysis}
           mutationCount={analysisResult?.alignment?.mutation_count ?? 0}
+          isModified={isSequenceModified}
           backendStatus={backendStatus}
           onRetryBackend={refreshBackendHealth}
+          onOpenHelp={() => setIsHelpOpen(true)}
         />
 
-        {/* Central Stage Workstation: Dynamic Width depending on Sidebar */}
+        {/* Central Stage Workstation: Renders the active destination */}
         <main className="flex-1 min-w-0 flex flex-col bg-[#090A0C] overflow-hidden">
           {/* =========================================================
-              STAGE A: DEDICATED DNA INPUT WORKSPACE (NO 3D VIEWER)
+              DESTINATION 1: ANALYZE (Sequence Input & Baseline)
           ========================================================= */}
-          {(!hasAnalyzed || activeTab === 'input') && (
+          {(!hasAnalyzed || activeTab === 'analyze') && (
             <SequenceInputWorkspace
               onAnalyze={handleAnalyze}
               isAnalyzing={isAnalyzing}
@@ -336,132 +465,57 @@ export function App() {
               onClearError={() => setAnalysisError(null)}
               backendStatus={backendStatus}
               onRetryBackend={refreshBackendHealth}
+              initialMutatedSequence={currentEditedSequence}
             />
           )}
 
           {/* =========================================================
-              STAGE B: MOLECULAR WORKSPACE (3D SURFACE + PANELS)
+              DESTINATION 2: RESULTS & EDIT (Visual Alignment & Editor)
           ========================================================= */}
-          {hasAnalyzed && activeTab === 'molecular' && (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <div className="flex-1 flex min-h-0 overflow-hidden">
-                {/* Left Panel: Mutation Navigator */}
-                <div className="w-72 shrink-0 h-full hidden md:block">
-                  <MutationNavigator
-                    mutations={analysisResult?.alignment?.mutations || []}
-                    mappedResidues={mappedResidues}
-                    selectedIndex={selectedMutationIndex}
-                    onSelectMutation={(idx) => setSelectedMutationIndex(idx)}
-                    isStructureMapped={analysisResult?.structure_mapping?.mapped ?? false}
-                  />
-                </div>
-
-                {/* Center Panel: Real 3D Molecular Surface Viewport */}
-                <div className="flex-1 min-w-0 h-full relative">
-                  <MolecularSurfaceViewer
-                    pdbData={pdbData}
-                    mappedResidues={mappedResidues}
-                    selectedResidueNumber={selectedMappedResidue?.residue_number ?? null}
-                    selectedChain={selectedMappedResidue?.chain ?? 'A'}
-                    provenance={analysisResult?.structure_mapping?.provenance ?? null}
-                    isMapped={analysisResult?.structure_mapping?.mapped ?? false}
-                    unmappedReason={analysisResult?.structure_mapping?.reason}
-                    onSelectResidue={(resNum, _chain) => {
-                      const foundIdx = analysisResult?.alignment?.mutations.findIndex(
-                        (m) =>
-                          mappedResidues.find(
-                            (r) => r.mutation_ref_pos === m.reference_position && r.residue_number === resNum
-                          )
-                      );
-                      if (foundIdx !== undefined && foundIdx >= 0) {
-                        setSelectedMutationIndex(foundIdx);
-                      }
-                    }}
-                  />
-                </div>
-
-                {/* Right Panel: Mutation Details Panel */}
-                <div className="w-80 shrink-0 h-full hidden lg:block">
-                  <MutationDetailsPanel
-                    selectedMutation={selectedMutation}
-                    mappedResidue={selectedMappedResidue}
-                    analysisResult={analysisResult}
-                  />
-                </div>
-              </div>
-
-              {/* Bottom Dock: Aligned Sequence Comparison Ribbon */}
-              <div className="h-28 shrink-0">
-                <AlignedSequenceRibbon
-                  alignedReference={analysisResult?.alignment?.aligned_reference || ''}
-                  alignedObserved={analysisResult?.alignment?.aligned_observed || ''}
-                  mutations={analysisResult?.alignment?.mutations || []}
-                  selectedMutationIndex={selectedMutationIndex}
-                  onSelectMutation={(idx) => setSelectedMutationIndex(idx)}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* =========================================================
-              STAGE B: STRUCTURAL COMPARISON VIEW
-          ========================================================= */}
-          {hasAnalyzed && activeTab === 'comparison' && (
-            <StructuralComparisonView
+          {hasAnalyzed && activeTab === 'results' && analysisResult && (
+            <ResultsAndEditView
+              analysisResult={analysisResult}
+              referenceSequence={referenceSequence}
+              originalSubmittedSequence={originalSubmittedSequence}
+              currentEditedSequence={currentEditedSequence}
+              lastAnalysedSequence={lastAnalysedSequence}
+              editHistory={editHistory}
+              onApplyEdit={handleApplyEdit}
+              onUndoLastEdit={handleUndoLastEdit}
+              onDiscardEdits={handleDiscardEdits}
+              onReanalyse={handleReanalyse}
+              isReanalysing={isReanalysing}
+              gene={analysisContext.gene}
+              accession={analysisContext.accession}
+              organism={analysisContext.organism}
               pdbData={pdbData}
-              mappedResidues={mappedResidues}
-              mutations={analysisResult?.alignment?.mutations || []}
-              selectedResidueNumber={selectedMappedResidue?.residue_number ?? null}
-              selectedChain={selectedMappedResidue?.chain ?? 'A'}
-              provenance={analysisResult?.structure_mapping?.provenance ?? null}
-              isMapped={analysisResult?.structure_mapping?.mapped ?? false}
-              unmappedReason={analysisResult?.structure_mapping?.reason}
+              onNavigateToReport={() => setActiveTab('report')}
             />
           )}
 
           {/* =========================================================
-              STAGE B: SCIENTIFIC REPORT VIEW
+              DESTINATION 3: REPORT (4-Page SwissADME Report & CSV)
           ========================================================= */}
-          {hasAnalyzed && activeTab === 'report' && (
-            <div className="flex-1 overflow-y-auto">
-              <ReportView
-                originalSequence={analysisResult?.reference_validation?.cleanedSequence || ''}
-                mutatedSequence={analysisResult?.observed_validation?.cleanedSequence || ''}
-                mutationDiff={null}
-                validation={analysisResult?.reference_validation || validateDNASequence('')}
-                referenceSeq={null}
-                analysisResult={analysisResult}
-              />
-            </div>
-          )}
-
-          {/* =========================================================
-              STAGE B: STANDALONE MUTATION NAVIGATOR (MOBILE/TABLET)
-          ========================================================= */}
-          {hasAnalyzed && activeTab === 'navigator' && (
-            <div className="flex-1 flex overflow-hidden">
-              <div className="w-80 border-r border-[#2A2D33] h-full">
-                <MutationNavigator
-                  mutations={analysisResult?.alignment?.mutations || []}
-                  mappedResidues={mappedResidues}
-                  selectedIndex={selectedMutationIndex}
-                  onSelectMutation={(idx) => setSelectedMutationIndex(idx)}
-                  isStructureMapped={analysisResult?.structure_mapping?.mapped ?? false}
-                />
-              </div>
-              <div className="flex-1 h-full overflow-y-auto">
-                <MutationDetailsPanel
-                  selectedMutation={selectedMutation}
-                  mappedResidue={selectedMappedResidue}
-                  analysisResult={analysisResult}
-                />
-              </div>
-            </div>
+          {hasAnalyzed && activeTab === 'report' && analysisResult && (
+            <ReportView
+              analysisResult={analysisResult}
+              referenceSequence={referenceSequence}
+              originalSubmittedSequence={originalSubmittedSequence}
+              currentEditedSequence={currentEditedSequence}
+              lastAnalysedSequence={lastAnalysedSequence}
+              editHistory={editHistory}
+              revision={revision}
+              gene={analysisContext.gene}
+              accession={analysisContext.accession}
+              organism={analysisContext.organism}
+              onReanalyse={handleReanalyse}
+              isReanalysing={isReanalysing}
+            />
           )}
         </main>
       </div>
 
-      {/* Help & Limitations Modal */}
+      {/* Methodology & Limitations Modal */}
       <HelpLimitationsModal
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}

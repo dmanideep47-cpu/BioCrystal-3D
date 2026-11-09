@@ -149,15 +149,20 @@ export interface BasePair3DGeometry {
 
 export interface AlignmentMutation {
   type: 'substitution' | 'insertion' | 'deletion';
+  mutation_type?: string;
   reference_position: number;
   observed_position: number;
   original_base: string;
   observed_base: string;
+  reference_bases?: string;
+  observed_bases?: string;
   affected_codon_index?: number;
   reference_codon?: string | null;
+  original_codon?: string | null;
   observed_codon?: string | null;
   original_amino_acid?: AminoAcidInfo;
   observed_amino_acid?: AminoAcidInfo;
+  amino_acid_change?: string;
   category: string;
   category_label: string;
   is_transition?: boolean | null;
@@ -331,6 +336,16 @@ export interface CorrectionRecommendationResult {
 }
 
 export type BackendStatus = 'CONNECTING' | 'ONLINE' | 'OFFLINE' | 'ERROR';
+
+export interface SequenceEditRecord {
+  id: string;
+  timestamp: string;
+  position: number;
+  oldBases: string;
+  newBases: string;
+  action: string;
+  reason?: string;
+}
 
 export interface BackendHealthResponse {
   status: 'healthy' | 'degraded' | string;

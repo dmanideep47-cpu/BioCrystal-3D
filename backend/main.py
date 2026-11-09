@@ -92,7 +92,13 @@ class RecommendRequest(BaseModel):
 
 
 class PDFExportRequest(BaseModel):
+    model_config = {"extra": "allow"}
     original_sequence: str
+    current_sequence: Optional[str] = None
+    edit_history: Optional[List[Dict[str, Any]]] = None
+    revision: Optional[int] = 1
+    reference_name: Optional[str] = None
+    accession: Optional[str] = None
     complementary_sequence: Optional[str] = None
     gc_percent: Optional[float] = None
     at_percent: Optional[float] = None
