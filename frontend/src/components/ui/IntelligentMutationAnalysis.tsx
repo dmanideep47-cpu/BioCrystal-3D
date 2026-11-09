@@ -280,7 +280,11 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
                 <input
                   type="checkbox"
                   checked={useReference}
-                  onChange={(e) => setUseReference(e.target.checked)}
+                  onChange={(e) => {
+                    setUseReference(e.target.checked);
+                    setReferenceContextConfirmed(false);
+                    setCodingContextConfirmed(false);
+                  }}
                   className="rounded text-cyan-500"
                 />
                 Reference Mode
@@ -705,7 +709,7 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
       <div className="ima-panel">
         <div className="ima-panel-header">
           <span className="ima-panel-title">
-            <Sparkles className="w-4 h-4 text-emerald-400" /> Section E: Intelligent Correction Recommendations
+            <Sparkles className="w-4 h-4 text-emerald-400" /> Section E: Candidate Assessment & Replacement Proposals
           </span>
           <span className="text-xs text-slate-400 font-mono">
             {candidatesList.length} Candidate Proposals
@@ -812,13 +816,22 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
             </div>
 
             <div className="text-xs text-slate-300 space-y-2">
-              <p>You are about to replace the active workspace DNA sequence with the proposed candidate:</p>
-              <div className="font-mono text-xs text-cyan-400 bg-[#05070a] p-2 rounded border border-[#202733] break-all">
-                {candidateToApply.sequence}
+              <p>Review the original observed sequence and proposed candidate before applying this new working version.</p>
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-500">Before</span>
+                <div className="font-mono text-xs text-slate-300 bg-[#05070a] p-2 rounded border border-[#202733] break-all">
+                  {obsInput.trim()}
+                </div>
+                <span className="text-[10px] uppercase tracking-wider text-cyan-400">Proposed after</span>
+                <div className="font-mono text-xs text-cyan-300 bg-[#05070a] p-2 rounded border border-cyan-900/60 break-all">
+                  {candidateToApply.sequence}
+                </div>
               </div>
-              <p><b>Edits:</b> {candidateToApply.edits_detail.join(', ')}</p>
+              <p><b>Edits:</b> {candidateToApply.edits_detail.join('; ')}</p>
+              <p><b>Objective:</b> {candidateToApply.score_label || 'Candidate fit for the selected objective'} ({(candidateToApply.objective_fit_score ?? candidateToApply.score).toFixed(1)}/100)</p>
+              <p><b>Why ranked here:</b> {candidateToApply.rationale}</p>
               <p className="text-amber-400 text-[11px]">
-                Notice: Applying this candidate will synchronize the 3D molecular double-helix scene, sequence ribbons, and reports.
+                Notice: This creates a new working version. Your original observed sequence and selected reference are retained separately. A computational proposal is not clinical or experimental validation.
               </p>
             </div>
 
