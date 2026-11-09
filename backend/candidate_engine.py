@@ -110,6 +110,7 @@ def generate_correction_candidates(
         objective: str,
         reference_identity: Optional[float] = None,
         changed_positions: Optional[List[int]] = None,
+        before_changed_positions: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         protein = _protein(sequence, reading_frame, table)
         reference_protein = _protein(clean_ref, reading_frame, table) if clean_ref else None
@@ -147,6 +148,7 @@ def generate_correction_candidates(
             "objective": objective,
             "reference_identity_percent": reference_identity,
             "changed_positions": sorted(set(changed_positions or [])),
+            "before_changed_positions": sorted(set(before_changed_positions or [])),
             "rationale": rationale,
             "scientific_limitation": limitation,
         }
@@ -200,10 +202,38 @@ def generate_correction_candidates(
                     )
                 )
 
-        restoration_positions = sorted({
-            max(1, int(mutation.get("reference_position") or 1))
-            for mutation in mutations
-        })
+        restoration_positions: set[int] = set()
+        observed_change_positions: set[int] = set()
+        for mutation in mutations:
+            kind = mutation.get("type")
+            reference_position = int(mutation.get("reference_position") or 1)
+            observed_position = int(mutation.get("observed_position") or 1)
+            reference_bases = str(mutation.get("original_base") or "")
+            observed_bases = str(mutation.get("observed_base") or "")
+
+            if kind == "substitution":
+                restoration_positions.add(reference_position)
+                observed_change_positions.add(observed_position)
+            elif kind == "insertion":
+                observed_change_positions.update(
+                    range(observed_position, observed_position + len(observed_bases))
+                )
+                # The inserted bases do not exist in the restored sequence.
+                # Mark the reference bases immediately flanking the restored junction.
+                if reference_position > 1:
+                    restoration_positions.add(reference_position - 1)
+                if reference_position <= len(clean_ref):
+                    restoration_positions.add(reference_position)
+            elif kind == "deletion":
+                restoration_positions.update(
+                    range(reference_position, reference_position + len(reference_bases))
+                )
+                # The deleted interval collapses to a boundary in the observed
+                # sequence, so mark the adjacent observed nucleotide(s).
+                if observed_position > 1:
+                    observed_change_positions.add(observed_position - 1)
+                if observed_position <= len(clean_obs):
+                    observed_change_positions.add(observed_position)
         candidates = [
             make_candidate(
                 "cand_ref_full",
@@ -217,7 +247,8 @@ def generate_correction_candidates(
                 "Reference identity (objective fit, not probability)",
                 "match_supplied_reference",
                 100.0,
-                changed_positions=restoration_positions,
+                changed_positions=sorted(restoration_positions),
+                before_changed_positions=sorted(observed_change_positions),
             )
         ]
 
@@ -251,6 +282,7 @@ def generate_correction_candidates(
                         "match_supplied_reference",
                         identity,
                         changed_positions=[int(mutation["reference_position"])],
+                        before_changed_positions=[position],
                     )
                 )
 
@@ -326,6 +358,11 @@ def generate_correction_candidates(
                     "GC-target fit (objective fit, not probability)",
                     "preserve_protein_and_approach_gc_target",
                     changed_positions=[
+                        start + offset + 1
+                        for offset, (before, after) in enumerate(zip(current_codon, alternative))
+                        if before != after
+                    ],
+                    before_changed_positions=[
                         start + offset + 1
                         for offset, (before, after) in enumerate(zip(current_codon, alternative))
                         if before != after
