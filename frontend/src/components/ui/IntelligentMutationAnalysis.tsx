@@ -760,7 +760,10 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
                   <div className="flex items-center gap-3">
                     <span>Edits: <b className="text-slate-200">{cand.edits_count}</b></span>
                     <span>GC: <b className="text-slate-200">{cand.resulting_gc_percent}%</b></span>
-                    <span>Protein Preserved: <b className={cand.protein_preserved ? 'text-emerald-400' : 'text-amber-400'}>{cand.protein_preserved ? 'Yes (100%)' : 'No'}</b></span>
+                    <span>Translation vs observed: <b className={cand.protein_preserved ? 'text-emerald-400' : 'text-amber-400'}>{cand.protein_preserved ? 'Preserved' : 'Changed'}</b></span>
+                    {cand.protein_matches_reference !== undefined && cand.protein_matches_reference !== null && (
+                      <span>Matches reference: <b className={cand.protein_matches_reference ? 'text-emerald-400' : 'text-amber-400'}>{cand.protein_matches_reference ? 'Yes' : 'No'}</b></span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
