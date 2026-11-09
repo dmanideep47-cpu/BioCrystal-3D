@@ -33,7 +33,7 @@ import './IntelligentMutationAnalysis.css';
 interface IntelligentMutationAnalysisProps {
   currentSequence: string;
   referenceSequence: string | null;
-  onApplySequence: (newSeq: string, refSeq?: string, activeDiff?: MutationDiff | null) => void;
+  onApplySequence: (newSeq: string, refSeq?: string, changedPositions?: number[], baselineSequence?: string) => void;
   onSelectPosition: (pos: number) => void;
   onNavigateTo3D: () => void;
   onNavigateToComparison: () => void;
@@ -161,6 +161,7 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
         setObsInput(text);
       } else {
         setRefInput(text);
+        setReferenceContextConfirmed(false);
       }
     };
     reader.readAsText(file);
@@ -173,7 +174,12 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
     const targetSeq = candidateToApply.sequence;
     const activeRef = useReference && refInput.trim() ? refInput.trim() : undefined;
 
-    onApplySequence(targetSeq, activeRef, null);
+    onApplySequence(
+      targetSeq,
+      activeRef,
+      candidateToApply.changed_positions || [],
+      obsInput.trim(),
+    );
     setObsInput(targetSeq);
     setCandidateToApply(null);
     setAnalysisRunKey((key) => key + 1);
@@ -330,7 +336,10 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
                 </div>
                 <textarea
                   value={refInput}
-                  onChange={(e) => setRefInput(e.target.value)}
+                  onChange={(e) => {
+                    setRefInput(e.target.value);
+                    setReferenceContextConfirmed(false);
+                  }}
                   placeholder="Enter reference sequence (e.g. ATGGCTACTGGTTAA)..."
                   className="ima-textarea"
                   rows={2}
