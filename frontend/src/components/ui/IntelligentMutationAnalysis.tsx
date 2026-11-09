@@ -198,6 +198,9 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
         molecular_weight_kda: obsValidation.molecularWeightKDa,
         mutations_list: compareResult ? compareResult.alignment.mutations : null,
         candidates: candidatesList,
+        recommendation_status: recommendationStatus,
+        recommendation_notice: recommendationNotice,
+        ranking_basis: rankingBasis,
       };
 
       const res = await fetch('/api/export-pdf', {
