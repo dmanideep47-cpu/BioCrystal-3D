@@ -10,7 +10,10 @@ from Bio.Data import CodonTable
 from Bio.Seq import Seq
 from Bio.SeqUtils import gc_fraction
 
-from bio_engine import perform_pairwise_alignment, validate_dna_sequence
+try:
+    from .bio_engine import perform_pairwise_alignment, validate_dna_sequence
+except ImportError:  # Supports running Uvicorn from inside the backend directory.
+    from bio_engine import perform_pairwise_alignment, validate_dna_sequence
 
 
 def _protein(sequence: str, frame: int, table: Any) -> str:
