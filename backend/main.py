@@ -16,8 +16,8 @@ from bio_engine import (
     classify_mutation,
     perform_pairwise_alignment,
     perform_exploratory_analysis,
-    generate_correction_candidates,
 )
+from candidate_engine import generate_correction_candidates
 from pdf_generator import generate_pdf_report
 
 app = FastAPI(
