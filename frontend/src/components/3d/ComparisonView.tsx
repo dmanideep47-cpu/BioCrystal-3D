@@ -18,6 +18,8 @@ interface ComparisonViewProps {
   originalSequence: string;
   mutatedSequence: string;
   mutationDiff: MutationDiff | null;
+  mutatedPositions?: Set<number>;
+  isCandidateComparison?: boolean;
   visualizationMode: VisualizationMode;
   qualityPreset: QualityPreset;
   selectedPosition: number | null;
@@ -33,6 +35,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   originalSequence,
   mutatedSequence,
   mutationDiff,
+  mutatedPositions,
+  isCandidateComparison = false,
   visualizationMode,
   qualityPreset,
   selectedPosition,
@@ -47,7 +51,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   const [resetKey, setResetKey] = useState<number>(0);
 
   // Set of mutated positions
-  const mutatedIndices = new Set<number>();
+  const mutatedIndices = new Set<number>(mutatedPositions || []);
   if (mutationDiff) {
     mutatedIndices.add(mutationDiff.position);
   }
@@ -161,7 +165,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
             <div className="w-1/2 h-full relative border-r border-[#2A2D33]">
               <div className="absolute top-3 left-4 z-10 flex items-center space-x-2 bg-[#111316]/90 px-3 py-1.5 rounded-md border border-[#2A2D33] shadow-md backdrop-blur-md">
                 <div className="w-2 h-2 rounded-full bg-[#35C98A]" />
-                <span className="text-xs font-mono font-semibold text-[#F4F4F2]">REFERENCE WILD-TYPE</span>
+                <span className="text-xs font-mono font-semibold text-[#F4F4F2]">{isCandidateComparison ? 'BEFORE CANDIDATE' : 'REFERENCE / BASELINE'}</span>
                 <span className="text-[10px] text-[#70757D] font-mono">({originalSequence.length} bp)</span>
               </div>
               <DNAScene
@@ -184,7 +188,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
             <div className="w-1/2 h-full relative">
               <div className="absolute top-3 left-4 z-10 flex items-center space-x-2 bg-[#111316]/90 px-3 py-1.5 rounded-md border border-[#2A2D33] shadow-md backdrop-blur-md">
                 <div className="w-2 h-2 rounded-full bg-[#F3B347] animate-pulse" />
-                <span className="text-xs font-mono font-semibold text-[#F4F4F2]">OBSERVED VARIANT</span>
+                <span className="text-xs font-mono font-semibold text-[#F4F4F2]">{isCandidateComparison ? 'PROPOSED AFTER' : 'OBSERVED VARIANT'}</span>
                 <span className="text-[10px] text-[#70757D] font-mono">({mutatedSequence.length} bp)</span>
               </div>
               <DNAScene
@@ -234,7 +238,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
         {viewType === 'original' && (
           <div className="w-full h-full relative">
             <div className="absolute top-3 left-4 z-10 flex items-center space-x-2 bg-[#111316]/90 px-3 py-1.5 rounded-md border border-[#2A2D33] shadow-md backdrop-blur-md">
-              <span className="text-xs font-mono font-semibold text-[#F4F4F2]">REFERENCE SEQUENCE VIEW</span>
+              <span className="text-xs font-mono font-semibold text-[#F4F4F2]">{isCandidateComparison ? 'BEFORE CANDIDATE' : 'REFERENCE SEQUENCE VIEW'}</span>
             </div>
             <DNAScene
               sequence={originalSequence}
@@ -257,7 +261,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
         {viewType === 'mutated' && (
           <div className="w-full h-full relative">
             <div className="absolute top-3 left-4 z-10 flex items-center space-x-2 bg-[#111316]/90 px-3 py-1.5 rounded-md border border-[#2A2D33] shadow-md backdrop-blur-md">
-              <span className="text-xs font-mono font-semibold text-[#F4F4F2]">OBSERVED SEQUENCE VIEW</span>
+              <span className="text-xs font-mono font-semibold text-[#F4F4F2]">{isCandidateComparison ? 'PROPOSED AFTER' : 'OBSERVED SEQUENCE VIEW'}</span>
             </div>
             <DNAScene
               sequence={mutatedSequence}
