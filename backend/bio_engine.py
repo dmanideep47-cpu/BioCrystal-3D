@@ -313,11 +313,23 @@ def perform_pairwise_alignment(
             curr_ref_pos = ref_pos
             curr_obs_pos = obs_pos
 
-            # Codon context in reference
-            codon_idx = (curr_ref_pos - 1 - reading_frame) // 3
-            codon_start = reading_frame + codon_idx * 3
-            ref_codon = clean_ref[codon_start:codon_start + 3] if len(clean_ref) >= codon_start + 3 else None
-            obs_codon = clean_obs[codon_start:codon_start + 3] if len(clean_obs) >= codon_start + 3 else None
+            # Map codons with their own alignment coordinate systems.
+            # Reference and observed coordinates diverge after insertions/deletions.
+            ref_codon_idx = (curr_ref_pos - 1 - reading_frame) // 3 if curr_ref_pos > reading_frame else -1
+            obs_codon_idx = (curr_obs_pos - 1 - reading_frame) // 3 if curr_obs_pos > reading_frame else -1
+            ref_codon_start = reading_frame + ref_codon_idx * 3 if ref_codon_idx >= 0 else -1
+            obs_codon_start = reading_frame + obs_codon_idx * 3 if obs_codon_idx >= 0 else -1
+            ref_codon = (
+                clean_ref[ref_codon_start:ref_codon_start + 3]
+                if ref_codon_start >= 0 and len(clean_ref) >= ref_codon_start + 3
+                else None
+            )
+            obs_codon = (
+                clean_obs[obs_codon_start:obs_codon_start + 3]
+                if obs_codon_start >= 0 and len(clean_obs) >= obs_codon_start + 3
+                else None
+            )
+            codon_idx = ref_codon_idx if ref_codon_idx >= 0 else -1
 
             ref_aa = get_amino_acid_info(ref_codon, table_id)
             obs_aa = get_amino_acid_info(obs_codon, table_id)
@@ -326,7 +338,14 @@ def perform_pairwise_alignment(
             is_mut_purine = new_base in ('A', 'G')
             is_trans = is_orig_purine == is_mut_purine
 
-            if ref_aa['code3'] == obs_aa['code3']:
+            if ref_codon is None or obs_codon is None:
+                category = "non_coding"
+                category_label = "Outside complete codon context"
+                desc = (
+                    f"Substitution {orig_base}{curr_ref_pos}{new_base} could not be assigned "
+                    "to complete codons in both sequences for the selected reading frame."
+                )
+            elif ref_aa['code3'] == obs_aa['code3']:
                 category = "synonymous"
                 category_label = "Synonymous (Silent)"
                 desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} (codon {ref_codon} -> {obs_codon}) preserves amino acid {ref_aa['name']} ({ref_aa['code3']})."
