@@ -84,6 +84,9 @@ class PDFExportRequest(BaseModel):
     mutations_list: Optional[List[Dict[str, Any]]] = None
     candidates: Optional[List[Dict[str, Any]]] = None
     analysis_mode: Optional[str] = "reference_based"
+    recommendation_status: Optional[str] = None
+    recommendation_notice: Optional[str] = None
+    ranking_basis: Optional[str] = None
 
 
 # ==============================================================================
