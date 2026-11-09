@@ -178,7 +178,14 @@ export interface CorrectionCandidate {
   protein_preserved: boolean;
   premature_stop_detected: boolean;
   constraint_violations: string[];
+  /** Objective-fit metric, not a probability of biological correctness. */
   score: number;
+  objective_fit_score?: number;
+  score_label?: string;
+  objective?: string;
+  rank?: number;
+  reference_identity_percent?: number | null;
+  protein_matches_reference?: boolean | null;
   rationale: string;
   scientific_limitation: string;
 }
@@ -252,6 +259,9 @@ export interface CorrectionRecommendationResult {
   total_candidates: number;
   strategies_used: string[];
   candidates: CorrectionCandidate[];
+  recommendation_status?: string;
+  recommendation_notice?: string;
+  ranking_basis?: string;
   safeguards_notice: string;
 }
 
