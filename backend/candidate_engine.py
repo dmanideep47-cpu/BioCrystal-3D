@@ -108,6 +108,7 @@ def generate_correction_candidates(
         score_label: str,
         objective: str,
         reference_identity: Optional[float] = None,
+        changed_positions: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         protein = _protein(sequence, reading_frame, table)
         reference_protein = _protein(clean_ref, reading_frame, table) if clean_ref else None
@@ -144,6 +145,7 @@ def generate_correction_candidates(
             "score_label": score_label,
             "objective": objective,
             "reference_identity_percent": reference_identity,
+            "changed_positions": sorted(set(changed_positions or [])),
             "rationale": rationale,
             "scientific_limitation": limitation,
         }
@@ -197,6 +199,10 @@ def generate_correction_candidates(
                     )
                 )
 
+        restoration_positions = sorted({
+            max(1, int(mutation.get("reference_position") or 1))
+            for mutation in mutations
+        })
         candidates = [
             make_candidate(
                 "cand_ref_full",
@@ -210,6 +216,7 @@ def generate_correction_candidates(
                 "Reference identity (objective fit, not probability)",
                 "match_supplied_reference",
                 100.0,
+                changed_positions=restoration_positions,
             )
         ]
 
@@ -242,6 +249,7 @@ def generate_correction_candidates(
                         "Reference identity (objective fit, not probability)",
                         "match_supplied_reference",
                         identity,
+                        changed_positions=[int(mutation["reference_position"])],
                     )
                 )
 
@@ -316,6 +324,11 @@ def generate_correction_candidates(
                     objective_score,
                     "GC-target fit (objective fit, not probability)",
                     "preserve_protein_and_approach_gc_target",
+                    changed_positions=[
+                        start + offset + 1
+                        for offset, (before, after) in enumerate(zip(current_codon, alternative))
+                        if before != after
+                    ],
                 )
                 if not candidate["constraint_violations"]:
                     candidates.append(candidate)
