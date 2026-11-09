@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import "./LandingPage.css";
 import {
   Activity,
   ArrowDown,
@@ -265,15 +266,22 @@ function Reveal({ children, className = "", delay = 0 }: { children: ReactNode; 
 }
 
 function ActionButton({ children, onClick, variant = "dark", className = "" }: { children: ReactNode; onClick: () => void; variant?: "dark" | "orange" | "light"; className?: string }) {
-  const skin = variant === "orange"
-    ? "border-[#ff6500] bg-[#ff6500] text-black"
-    : variant === "light"
-      ? "border-white bg-white text-black bc-button-light"
-      : "border-[#111315] bg-[#111315] text-white";
   return (
-    <button type="button" onClick={onClick} className={`bc-button group inline-flex min-h-12 items-center justify-between gap-7 border px-5 font-mono text-[9px] font-black tracking-[.12em] ${skin} ${className}`}>
-      <span>{children}</span>
-      <ArrowUpRight size={15} className="transition-transform duration-300 group-hover:-translate-y-1 group-hover:translate-x-1" />
+    <button
+      type="button"
+      onClick={onClick}
+      className={`bc-precision-cta bc-precision-cta--${variant} group inline-flex min-h-12 items-center justify-between gap-7 px-5 ${className}`}
+    >
+      <span className="bc-precision-cta__corners" aria-hidden="true">
+        <i className="bc-precision-cta__corner bc-precision-cta__corner--tl" />
+        <i className="bc-precision-cta__corner bc-precision-cta__corner--tr" />
+        <i className="bc-precision-cta__corner bc-precision-cta__corner--bl" />
+        <i className="bc-precision-cta__corner bc-precision-cta__corner--br" />
+      </span>
+      <span className="bc-precision-cta__label">{children}</span>
+      <span className="bc-precision-cta__icon" aria-hidden="true">
+        <ArrowUpRight size={16} strokeWidth={2.4} />
+      </span>
     </button>
   );
 }
@@ -367,20 +375,52 @@ function WorkflowDiagram() {
 function SequenceTerminal({ mode, onModeChange, onLaunch }: { mode: SequenceMode; onModeChange: (mode: SequenceMode) => void; onLaunch: () => void }) {
   const sequence = mode === "reference" ? REFERENCE_SEQUENCE : OBSERVED_SEQUENCE;
   const metrics = sequenceMetrics(sequence);
+  const commandText = mode === "reference"
+    ? "analyze --reference reference.fasta"
+    : "compare --observed variant.fasta";
   const [paused, setPaused] = useState(false);
+  const [commandTyped, setCommandTyped] = useState(0);
   const [typed, setTyped] = useState(0);
   const [copied, setCopied] = useState(false);
 
+  const isTypingCommand = commandTyped < commandText.length;
+  const isTypingSequence = !isTypingCommand && typed < sequence.length;
+  const streamStatus = paused
+    ? "STREAM PAUSED"
+    : isTypingCommand
+      ? "ENTERING COMMAND"
+      : isTypingSequence
+        ? "STREAMING BASES"
+        : "SEQUENCE READY";
+
   useEffect(() => {
     if (paused) return;
-    const timer = window.setTimeout(() => {
-      if (typed < sequence.length) setTyped((current) => current + 1);
-      else setTyped(0);
-    }, typed < sequence.length ? 82 : 1700);
-    return () => window.clearTimeout(timer);
-  }, [paused, sequence, typed]);
 
-  useEffect(() => { setTyped(0); }, [mode]);
+    let timer: number;
+    if (commandTyped < commandText.length) {
+      timer = window.setTimeout(
+        () => setCommandTyped((current) => Math.min(current + 1, commandText.length)),
+        34,
+      );
+    } else if (typed < sequence.length) {
+      timer = window.setTimeout(
+        () => setTyped((current) => Math.min(current + 1, sequence.length)),
+        68,
+      );
+    } else {
+      timer = window.setTimeout(() => {
+        setCommandTyped(0);
+        setTyped(0);
+      }, 2100);
+    }
+
+    return () => window.clearTimeout(timer);
+  }, [paused, commandText, commandTyped, sequence.length, typed]);
+
+  useEffect(() => {
+    setCommandTyped(0);
+    setTyped(0);
+  }, [mode]);
 
   const copySequence = async () => {
     try {
@@ -415,15 +455,30 @@ function SequenceTerminal({ mode, onModeChange, onLaunch }: { mode: SequenceMode
           <div className="bc-scan-line pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-orange-500/10 to-transparent" />
           <div className="relative">
             <div className="flex items-center justify-between font-mono text-[8px] text-neutral-500"><span>CLIENT / INPUT STREAM</span><span>SEQ-{mode === "reference" ? "REF" : "OBS"}-001</span></div>
-            <p className="mt-8 font-mono text-xs text-neutral-300"><span className="text-orange-400">bio@crystal:~$</span> analyze --sequence</p>
-            <div className="mt-5 min-h-[54px] break-all font-mono text-base font-bold leading-8 tracking-[.12em] text-orange-400 sm:text-lg">{sequence.slice(0, typed)}<span className="bc-terminal-cursor ml-1 inline-block h-5 w-[2px] bg-orange-500 align-middle" /></div>
-            <div className="mt-5 flex flex-wrap items-center gap-3 font-mono text-[8px] text-neutral-500"><span className="bc-pulse-dot h-2 w-2 rounded-full bg-emerald-400" />{paused ? "STREAM PAUSED" : "DEMONSTRATION STREAM"}<span className="text-neutral-700">/</span>{sequence.length} BASES</div>
+            <p className="bc-terminal-command mt-8 font-mono text-xs text-neutral-300">
+              <span className="text-orange-400">bio@crystal:~$</span>
+              <span>{commandText.slice(0, commandTyped)}</span>
+              <span className={`bc-terminal-command__caret ${isTypingCommand ? "" : "is-idle"}`} aria-hidden="true" />
+            </p>
+            <div className="mt-5 min-h-[54px] break-all font-mono text-base font-bold leading-8 tracking-[.12em] text-orange-400 sm:text-lg">
+              {isTypingCommand ? <span className="text-neutral-600">awaiting command…</span> : sequence.slice(0, typed)}
+              {!isTypingCommand && <span className="bc-terminal-cursor ml-1 inline-block h-5 w-[2px] bg-orange-500 align-middle" />}
+            </div>
+            <div className="bc-terminal-stream-meter mt-4" aria-hidden="true">
+              <span style={{ width: `${(typed / sequence.length) * 100}%` }} />
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3 font-mono text-[8px] text-neutral-500">
+              <span className="bc-pulse-dot h-2 w-2 rounded-full bg-emerald-400" />
+              {streamStatus}
+              <span className="text-neutral-700">/</span>
+              {typed}/{sequence.length} BASES
+            </div>
           </div>
         </div>
         <div className="p-5 sm:p-7">
           <div className="flex items-center justify-between"><p className="font-mono text-[8px] font-bold tracking-[.15em] text-neutral-500">SEQUENCE SUMMARY</p><span className="font-mono text-[8px] text-orange-400">SAMPLE / 001</span></div>
           <div className="mt-5 space-y-3">{[["SEQUENCE LENGTH", `${metrics.length} bp`], ["COMPLETE CODONS", String(metrics.codons)], ["GC CONTENT", `${metrics.gcPercent.toFixed(1)}%`], ["A / T / G / C", `${metrics.counts.A} / ${metrics.counts.T} / ${metrics.counts.G} / ${metrics.counts.C}`], ["VALIDATION", "VALID DNA SAMPLE"]].map(([label, value], i) => <div key={label} className="flex items-center justify-between gap-4 border-b border-white/10 pb-3 font-mono text-[8px]"><span className="text-neutral-500">{label}</span><span className={i === 4 ? "font-bold text-emerald-400" : "font-bold text-neutral-100"}>{value}</span></div>)}</div>
-          <button type="button" onClick={onLaunch} className="bc-button mt-6 inline-flex items-center gap-3 border border-orange-500 bg-orange-500 px-4 py-3 font-mono text-[8px] font-black tracking-[.12em] text-black">OPEN ANALYSIS WORKSPACE <ArrowUpRight size={14} /></button>
+          <ActionButton onClick={onLaunch} variant="light" className="mt-6">OPEN ANALYSIS WORKSPACE</ActionButton>
         </div>
       </div>
     </div>
@@ -791,7 +846,7 @@ function AnalysisEvolutionSection({ onLaunch }: { onLaunch: () => void }) {
               {active.points.map((point, index) => <div key={point} className="grid grid-cols-[28px_1fr] gap-3 border-b border-neutral-300 py-4"><span className="font-mono text-[8px] font-black text-orange-600">0{index + 1}</span><p className="text-[12px] leading-6 text-neutral-700">{point}</p></div>)}
             </div>
             <div className="mt-7 flex flex-wrap items-center gap-4">
-              <button type="button" onClick={onLaunch} className="bc-button inline-flex items-center gap-6 border border-[#111315] bg-[#111315] px-5 py-4 font-mono text-[8px] font-black tracking-[.13em] text-white">OPEN THE LAB <ArrowUpRight size={14} /></button>
+              <ActionButton onClick={onLaunch} variant="dark">OPEN THE LAB</ActionButton>
               <span className="font-mono text-[7px] font-bold tracking-[.1em] text-neutral-500">AVAILABLE IN WORKSPACE</span>
             </div>
           </div>
@@ -857,7 +912,7 @@ export const LandingPage = ({ onLaunch }: LandingPageProps) => {
           </nav>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <button type="button" onClick={launch} className="bc-button hidden min-h-10 items-center gap-4 border border-neutral-950 bg-neutral-950 px-4 font-mono text-[8px] font-black tracking-[.12em] text-white sm:inline-flex">OPEN LAB <ArrowUpRight size={14} /></button>
+            <ActionButton onClick={launch} variant="dark" className="bc-precision-cta--compact hidden sm:inline-flex">OPEN LAB</ActionButton>
             <button type="button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"} className="grid h-10 w-10 place-items-center border border-neutral-300 transition-colors hover:border-orange-500 hover:bg-orange-500 md:hidden">{menuOpen ? <X size={18} /> : <Menu size={18} />}</button>
             <button type="button" onClick={launch} aria-label="Launch BioCrystal workspace" className="hidden h-10 w-10 place-items-center border border-neutral-300 transition-colors hover:border-orange-500 hover:bg-orange-500 sm:grid"><ArrowUpRight size={17} /></button>
           </div>
@@ -878,7 +933,10 @@ export const LandingPage = ({ onLaunch }: LandingPageProps) => {
             <div className="grid items-center gap-10 lg:grid-cols-[1.08fr_.92fr] lg:gap-12">
               <Reveal>
                 <div>
-                  <h1 className="max-w-[850px] text-[clamp(3.2rem,7.7vw,7.6rem)] font-black leading-[.84] tracking-[-.085em]">READ THE CODE.<br /><span className="text-orange-600">REVEAL THE CHANGE.</span></h1>
+                  <h1 className="bc-hero-title max-w-[850px] text-[clamp(3.2rem,7.7vw,7.6rem)] font-black leading-[.84] tracking-[-.085em]">
+                    <span className="bc-hero-title__line">READ THE CODE.</span>
+                    <span className="bc-hero-title__line bc-hero-title__line--accent text-orange-600">REVEAL THE CHANGE.</span>
+                  </h1>
                   <p className="mt-8 max-w-[600px] text-sm leading-7 text-neutral-600 md:text-base md:leading-8">A scientific workspace for exploring DNA mutations through sequence analysis, codon translation and interactive molecular visualization.</p>
                   <div className="mt-8 flex flex-wrap items-center gap-4">
                     <ActionButton onClick={launch} variant="dark">LAUNCH LABORATORY</ActionButton>
@@ -944,7 +1002,7 @@ export const LandingPage = ({ onLaunch }: LandingPageProps) => {
                 <h2 className="mt-7 text-5xl font-black leading-[.9] tracking-[-.08em] md:text-7xl">UNPACK<br />THE HELIX.<br /><span className="text-white">INSPECT</span><br />EVERY LAYER.</h2>
                 <p className="mt-7 max-w-lg text-sm leading-7 text-neutral-950/75">Explore molecular organization through a technical exploded illustration. Connect base pairing, the molecular core and the DNA backbone in one structural view.</p>
                 <div className="mt-8 border-t border-black/25">{[["01", "BASE PAIR LAYER", "Complementary nucleotides form the paired rungs of the helix."], ["02", "MOLECULAR CORE", "Explore the central region and the geometry connecting both strands."], ["03", "SUGAR-PHOSPHATE BACKBONE", "Follow the two outer strands through the double helix."], ["04", "POSITION CONTEXT", "Relate a selected base to the wider sequence."]].map(([n, title, desc]) => <div key={n} className="grid grid-cols-[34px_1fr] gap-3 border-b border-black/25 py-4 transition-colors hover:bg-white/10"><span className="font-mono text-[9px] font-black">{n}</span><div><p className="font-mono text-[9px] font-black tracking-wide">{title}</p><p className="mt-2 text-xs leading-6 text-neutral-950/70">{desc}</p></div></div>)}</div>
-                <button type="button" onClick={launch} className="bc-button mt-8 inline-flex items-center gap-6 border border-black bg-black px-5 py-4 font-mono text-[9px] font-black tracking-[.12em] text-orange-500">OPEN THE 3D LAB <ArrowUpRight size={15} /></button>
+                <ActionButton onClick={launch} variant="dark" className="mt-8">OPEN THE 3D LAB</ActionButton>
               </Reveal>
               <Reveal delay={140}><ExplodedDiagram /></Reveal>
             </div>
@@ -989,7 +1047,7 @@ export const LandingPage = ({ onLaunch }: LandingPageProps) => {
             <Reveal className="mt-16 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><h2 className="text-5xl font-black leading-[.9] tracking-[-.08em] md:text-7xl">ONE SEQUENCE.<br /><span className="text-orange-500">FIVE DIMENSIONS.</span></h2><p className="max-w-xl self-end text-sm leading-7 text-neutral-400">Select a capability to inspect its purpose and expected output. Every entry is connected to the BioCrystal research workflow.</p></Reveal>
             <Reveal className="mt-14 grid grid-cols-2 border border-neutral-700 md:grid-cols-5">{CAPABILITIES.map((cap) => { const active = activeCapability === cap.id; return <button key={cap.id} type="button" onClick={() => setActiveCapability(cap.id)} className={`group flex min-h-[130px] flex-col items-start justify-between border-b border-r border-neutral-700 p-4 text-left transition-all duration-300 ${active ? "bc-tab-active bg-orange-500 text-black" : "text-neutral-300 hover:bg-white/[.05]"}`}><span className={`font-mono text-[8px] font-black ${active ? "text-black" : "text-orange-400"}`}>{cap.number} / {cap.category}</span><span className="mt-5 font-mono text-[9px] font-black uppercase tracking-[.08em]">{cap.label}</span></button> })}</Reveal>
             <div className="grid gap-8 border border-neutral-700 bg-[#1b1e22] p-6 md:p-9 lg:grid-cols-[.85fr_1.15fr]">
-              <div><Eyebrow dark>{activeCapabilityData.category}</Eyebrow><h3 className="mt-6 text-3xl font-black tracking-[-.05em]">{activeCapabilityData.label}</h3><p className="mt-5 text-sm leading-7 text-neutral-400">{activeCapabilityData.description}</p><div className="mt-7 border-y border-neutral-700 py-4"><p className="font-mono text-[8px] font-bold text-neutral-500">EXPECTED OUTPUT</p><p className="mt-2 text-xs font-bold text-white">{activeCapabilityData.output}</p></div><button type="button" onClick={launch} className="bc-button mt-7 inline-flex items-center gap-6 border border-orange-500 bg-orange-500 px-5 py-4 font-mono text-[9px] font-black tracking-[.12em] text-black">OPEN THIS MODULE <ArrowUpRight size={15} /></button></div>
+              <div><Eyebrow dark>{activeCapabilityData.category}</Eyebrow><h3 className="mt-6 text-3xl font-black tracking-[-.05em]">{activeCapabilityData.label}</h3><p className="mt-5 text-sm leading-7 text-neutral-400">{activeCapabilityData.description}</p><div className="mt-7 border-y border-neutral-700 py-4"><p className="font-mono text-[8px] font-bold text-neutral-500">EXPECTED OUTPUT</p><p className="mt-2 text-xs font-bold text-white">{activeCapabilityData.output}</p></div><ActionButton onClick={launch} variant="orange" className="mt-7">OPEN THIS MODULE</ActionButton></div>
               <div className="relative min-h-[260px] overflow-hidden border border-neutral-700 bg-[#111315] p-5"><TechnicalGrid dark className="opacity-50" /><div className="relative flex items-center justify-between border-b border-white/10 pb-3 font-mono text-[8px] text-neutral-500"><span>MODULE OUTPUT / VISUAL MAP</span><span>BC-3D / 06</span></div><div className="relative mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3">{[["INPUT", "DNA STRING"], ["ENGINE", "BIOINFORMATICS"], ["CONTEXT", "REFERENCE"], ["ANALYSIS", "VARIANT MAP"], ["VISUAL", "MOLECULAR"], ["OUTPUT", "REPORT"]].map(([a, b], i) => <div key={a} className={`min-h-[90px] border p-3 transition-all duration-300 hover:-translate-y-1 ${i === activeCapabilityIndex ? "border-orange-500 bg-orange-500/10" : "border-white/10 bg-white/[.025]"}`}><p className="font-mono text-[7px] text-neutral-500">{a}</p><p className="mt-3 font-mono text-[8px] font-bold text-neutral-200">{b}</p></div>)}</div><div className="relative mt-6 flex items-center gap-2 font-mono text-[8px] text-orange-400"><span className="bc-pulse-dot h-2 w-2 rounded-full bg-orange-500" /> MODULE SELECTED / {activeCapabilityData.number}</div></div>
             </div>
           </div>
@@ -1005,7 +1063,7 @@ export const LandingPage = ({ onLaunch }: LandingPageProps) => {
         <section className="relative overflow-hidden bg-orange-500 px-5 py-16 md:px-10 md:py-20 lg:px-16">
           <TechnicalGrid className="opacity-40" />
           <div className="relative z-10 mx-auto grid max-w-[1400px] gap-5 lg:grid-cols-[1.25fr_.75fr]">
-            <div className="flex min-h-[340px] flex-col justify-between bg-[#111315] p-7 text-orange-500 sm:p-10 md:p-14"><Eyebrow dark>THE MOLECULAR WORKSPACE</Eyebrow><h2 className="mt-12 text-5xl font-black leading-[.88] tracking-[-.08em] sm:text-6xl md:text-7xl">YOUR SEQUENCE.<br />YOUR QUESTIONS.<br /><span className="text-white">ONE LAB.</span></h2><div className="mt-10 flex flex-wrap gap-3"><button type="button" onClick={launch} className="bc-button bc-button-light inline-flex items-center gap-6 border border-white bg-white px-5 py-4 font-mono text-[9px] font-black tracking-[.12em] text-black">START ANALYZING <ArrowUpRight size={15} /></button><a href="#top" className="inline-flex items-center gap-3 border border-orange-500/50 px-5 py-4 font-mono text-[9px] font-black tracking-[.12em] text-orange-500 transition-colors hover:bg-orange-500 hover:text-black">BACK TO TOP <ArrowUpRight size={14} /></a></div></div>
+            <div className="flex min-h-[340px] flex-col justify-between bg-[#111315] p-7 text-orange-500 sm:p-10 md:p-14"><Eyebrow dark>THE MOLECULAR WORKSPACE</Eyebrow><h2 className="mt-12 text-5xl font-black leading-[.88] tracking-[-.08em] sm:text-6xl md:text-7xl">YOUR SEQUENCE.<br />YOUR QUESTIONS.<br /><span className="text-white">ONE LAB.</span></h2><div className="mt-10 flex flex-wrap gap-3"><ActionButton onClick={launch} variant="light">START ANALYZING</ActionButton><a href="#top" className="inline-flex items-center gap-3 border border-orange-500/50 px-5 py-4 font-mono text-[9px] font-black tracking-[.12em] text-orange-500 transition-colors hover:bg-orange-500 hover:text-black">BACK TO TOP <ArrowUpRight size={14} /></a></div></div>
             <div className="relative grid min-h-[340px] place-items-center overflow-hidden border border-black/70 bg-[#17191c] text-orange-500"><TechnicalGrid dark className="opacity-60" /><div className="bc-spin-slow absolute h-64 w-64 rounded-full border border-orange-500/25" /><div className="bc-float relative grid h-48 w-48 place-items-center border border-orange-500/40 bg-[#111315] shadow-[0_0_80px_rgba(255,101,0,.13)]"><Dna size={104} strokeWidth={1.1} /></div><span className="absolute bottom-5 left-5 font-mono text-[8px] font-bold tracking-[.14em] text-neutral-500">BIOCRYSTAL / END OF OVERVIEW</span><span className="absolute right-5 top-5 font-mono text-[8px] text-orange-400">BC-3D / 2026</span></div>
           </div>
         </section>
@@ -1016,7 +1074,7 @@ export const LandingPage = ({ onLaunch }: LandingPageProps) => {
           <div><a href="#top" className="inline-flex items-center gap-2 text-lg font-black tracking-[-.07em]"><Dna size={22} className="text-orange-600" /> BIOCRYSTAL<span className="text-orange-600">3D</span></a><p className="mt-5 max-w-xs text-sm leading-6 text-neutral-600">An interactive environment for DNA sequence analysis, mutation inspection and molecular visualization.</p><p className="mt-8 font-mono text-[8px] font-bold tracking-[.12em] text-neutral-500">COMPUTATIONAL BIOLOGY / PROJECT BC-3D</p></div>
           <div><p className="font-mono text-[8px] font-black tracking-[.14em] text-neutral-500">PLATFORM</p><div className="mt-5 space-y-3">{[["Sequence analysis", "#platform"], ["Mutation comparison", "#comparison"], ["Molecular lab", "#molecular"]].map(([a, b]) => <a key={a} href={b} className="block text-xs text-neutral-700 transition-colors hover:text-orange-700">{a}</a>)}</div></div>
           <div><p className="font-mono text-[8px] font-black tracking-[.14em] text-neutral-500">WORKFLOW</p><div className="mt-5 space-y-3">{[["Analysis pipeline", "#workflow"], ["Capabilities", "#capabilities"], ["Interpretation loop", "#interpretation"], ["Analysis system", "#analysis-evolution"]].map(([a, b]) => <a key={a} href={b} className="block text-xs text-neutral-700 transition-colors hover:text-orange-700">{a}</a>)}</div></div>
-          <div><p className="font-mono text-[8px] font-black tracking-[.14em] text-neutral-500">GET STARTED</p><button type="button" onClick={launch} className="bc-button mt-5 inline-flex items-center gap-4 border border-neutral-950 bg-neutral-950 px-4 py-3 font-mono text-[8px] font-black tracking-[.12em] text-white">OPEN WORKSPACE <ArrowUpRight size={13} /></button><p className="mt-5 text-[10px] leading-5 text-neutral-500">Illustrative sequence data is provided for demonstration and educational exploration.</p></div>
+          <div><p className="font-mono text-[8px] font-black tracking-[.14em] text-neutral-500">GET STARTED</p><ActionButton onClick={launch} variant="dark" className="bc-precision-cta--compact mt-5">OPEN WORKSPACE</ActionButton><p className="mt-5 text-[10px] leading-5 text-neutral-500">Illustrative sequence data is provided for demonstration and educational exploration.</p></div>
         </div>
         <div className="mx-auto mt-12 flex max-w-[1400px] flex-wrap items-center justify-between gap-3 border-t border-neutral-300 pt-5 font-mono text-[8px] font-bold tracking-[.1em] text-neutral-500"><span>© 2026 BIOCRYSTAL 3D</span><span>BUILT FOR SCIENTIFIC EXPLORATION</span><a href="#top" className="inline-flex items-center gap-2 transition-colors hover:text-orange-700">BACK TO TOP <ArrowUpRight size={12} /></a></div>
       </footer>
