@@ -83,6 +83,8 @@ class PDFExportRequest(BaseModel):
     reference_sequence: Optional[str] = None
     mutations_list: Optional[List[Dict[str, Any]]] = None
     candidates: Optional[List[Dict[str, Any]]] = None
+    before_sequence: Optional[str] = None
+    applied_candidate: Optional[Dict[str, Any]] = None
     analysis_mode: Optional[str] = "reference_based"
     recommendation_status: Optional[str] = None
     recommendation_notice: Optional[str] = None
