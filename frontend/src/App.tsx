@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
 
 import { LandingPage } from './components/ui/LandingPage';
@@ -17,11 +17,13 @@ import {
   AnalysisOptions,
   FullAnalysisResult,
   AlignmentMutation,
+  BackendStatus,
 } from './types/dna';
 import {
   compareSequencesAPI,
   fetchPdbAPI,
   validateSequenceAPI,
+  checkBackendHealthAPI,
 } from './services/apiService';
 import { validateDNASequence } from './services/bioinformatics';
 import {
@@ -39,6 +41,36 @@ export function App() {
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<AppNavTab>('input');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Backend Health State (CONNECTING, ONLINE, OFFLINE, ERROR)
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('CONNECTING');
+
+  const refreshBackendHealth = useCallback(async () => {
+    try {
+      await checkBackendHealthAPI();
+      setBackendStatus('ONLINE');
+    } catch {
+      setBackendStatus('OFFLINE');
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const runCheck = async () => {
+      try {
+        await checkBackendHealthAPI();
+        if (isMounted) setBackendStatus('ONLINE');
+      } catch {
+        if (isMounted) setBackendStatus('OFFLINE');
+      }
+    };
+    runCheck();
+    const intervalId = setInterval(runCheck, 25000);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
 
   // Analysis Progress and Error States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -200,6 +232,40 @@ export function App() {
 
         {/* Top Header Actions */}
         <div className="flex items-center space-x-2 text-xs">
+          {/* Real Backend Connection Indicator */}
+          <div className="flex items-center space-x-1.5 px-2 py-1 rounded bg-[#17191D] border border-[#2A2D33] text-[10px]">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                backendStatus === 'ONLINE'
+                  ? 'bg-[#35C98A] animate-pulse'
+                  : backendStatus === 'CONNECTING'
+                  ? 'bg-[#F3B347] animate-ping'
+                  : 'bg-[#F06464]'
+              }`}
+            />
+            <span
+              className={`font-semibold ${
+                backendStatus === 'ONLINE'
+                  ? 'text-[#35C98A]'
+                  : backendStatus === 'CONNECTING'
+                  ? 'text-[#F3B347]'
+                  : 'text-[#F06464]'
+              }`}
+            >
+              Backend: {backendStatus}
+            </span>
+            {backendStatus !== 'ONLINE' && (
+              <button
+                type="button"
+                onClick={refreshBackendHealth}
+                className="p-0.5 rounded text-[#A0A3AA] hover:text-[#F4F4F2] cursor-pointer ml-0.5"
+                title="Retry FastAPI health check"
+              >
+                <RotateCcw className="w-2.5 h-2.5 text-[#22C7E8]" />
+              </button>
+            )}
+          </div>
+
           {hasAnalyzed && (
             <button
               type="button"
@@ -252,6 +318,8 @@ export function App() {
           hasStructureMapped={analysisResult?.structure_mapping?.mapped ?? false}
           onNewAnalysis={handleNewAnalysis}
           mutationCount={analysisResult?.alignment?.mutation_count ?? 0}
+          backendStatus={backendStatus}
+          onRetryBackend={refreshBackendHealth}
         />
 
         {/* Central Stage Workstation: Dynamic Width depending on Sidebar */}
@@ -266,6 +334,8 @@ export function App() {
               analysisStageText={analysisStageText}
               analysisError={analysisError}
               onClearError={() => setAnalysisError(null)}
+              backendStatus={backendStatus}
+              onRetryBackend={refreshBackendHealth}
             />
           )}
 

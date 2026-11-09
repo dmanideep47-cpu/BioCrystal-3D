@@ -10,7 +10,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Dna,
+  RotateCcw,
 } from 'lucide-react';
+import { BackendStatus } from '../../types/dna';
 
 export type AppNavTab =
   | 'input'
@@ -29,6 +31,8 @@ interface SidebarNavProps {
   hasStructureMapped: boolean;
   onNewAnalysis: () => void;
   mutationCount?: number;
+  backendStatus?: BackendStatus;
+  onRetryBackend?: () => void;
 }
 
 interface NavItemConfig {
@@ -49,6 +53,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   hasStructureMapped,
   onNewAnalysis,
   mutationCount = 0,
+  backendStatus = 'CONNECTING',
+  onRetryBackend,
 }) => {
   const items: NavItemConfig[] = [
     {
@@ -205,16 +211,59 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
         </div>
       </div>
 
-      {/* Footer Info & Provenance */}
-      {!isCollapsed && (
+      {/* Footer Info & Backend Provenance */}
+      {!isCollapsed ? (
         <div className="px-3 pt-2 border-t border-[#2A2D33] text-[10px] text-[#70757D] font-mono space-y-1">
           <div className="flex items-center justify-between">
-            <span>Biopython / 3Dmol</span>
-            <span className="text-[#35C98A] font-semibold">ONLINE</span>
+            <span className="truncate">FastAPI / Bio</span>
+            <div className="flex items-center space-x-1.5 shrink-0">
+              {backendStatus === 'ONLINE' ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#35C98A] animate-pulse" />
+                  <span className="text-[#35C98A] font-semibold">ONLINE</span>
+                </>
+              ) : backendStatus === 'CONNECTING' ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#F3B347] animate-ping" />
+                  <span className="text-[#F3B347] font-semibold">CONNECTING</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#F06464]" />
+                  <span className="text-[#F06464] font-semibold">
+                    {backendStatus}
+                  </span>
+                  {onRetryBackend && (
+                    <button
+                      type="button"
+                      onClick={onRetryBackend}
+                      className="p-0.5 rounded text-[#A0A3AA] hover:text-[#F4F4F2] hover:bg-[#1D2025] transition-all cursor-pointer"
+                      title="Retry FastAPI connection"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
           <div className="text-[9px] text-[#70757D] leading-tight">
             Scientific Mutation Workstation
           </div>
+        </div>
+      ) : (
+        /* Collapsed indicator dot */
+        <div className="px-2 pt-2 border-t border-[#2A2D33] flex justify-center">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              backendStatus === 'ONLINE'
+                ? 'bg-[#35C98A]'
+                : backendStatus === 'CONNECTING'
+                ? 'bg-[#F3B347]'
+                : 'bg-[#F06464]'
+            }`}
+            title={`Backend: ${backendStatus}`}
+          />
         </div>
       )}
     </aside>

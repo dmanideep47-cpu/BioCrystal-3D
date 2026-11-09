@@ -5,11 +5,13 @@ import {
   AlertTriangle,
   Dna,
   Database,
+  RotateCcw,
 } from 'lucide-react';
 import {
   AnalysisContext,
   AnalysisOptions,
   SequenceValidationResult,
+  BackendStatus,
 } from '../../types/dna';
 import { validateDNASequence, REFERENCE_SEQUENCES } from '../../services/bioinformatics';
 
@@ -24,6 +26,8 @@ interface SequenceInputWorkspaceProps {
   analysisStageText: string;
   analysisError: string | null;
   onClearError: () => void;
+  backendStatus?: BackendStatus;
+  onRetryBackend?: () => void;
 }
 
 export const SequenceInputWorkspace: React.FC<SequenceInputWorkspaceProps> = ({
@@ -32,6 +36,8 @@ export const SequenceInputWorkspace: React.FC<SequenceInputWorkspaceProps> = ({
   analysisStageText,
   analysisError,
   onClearError,
+  backendStatus = 'ONLINE',
+  onRetryBackend,
 }) => {
   const refFileInputId = useId();
   const obsFileInputId = useId();
@@ -555,6 +561,30 @@ export const SequenceInputWorkspace: React.FC<SequenceInputWorkspaceProps> = ({
             Engine: Biopython PairwiseAligner & RCSB Structural Mapping
           </div>
         </div>
+
+        {/* Backend Status Notice when not Online */}
+        {backendStatus !== 'ONLINE' && (
+          <div className="p-3 rounded-md bg-[#17191D] border border-[#F06464]/40 flex flex-wrap items-center justify-between text-xs font-mono gap-2">
+            <div className="flex items-center space-x-2 text-[#F06464]">
+              <span className="w-2 h-2 rounded-full bg-[#F06464] animate-pulse shrink-0" />
+              <span>
+                {backendStatus === 'CONNECTING'
+                  ? 'Connecting to FastAPI backend (http://127.0.0.1:8000)...'
+                  : 'FastAPI backend is offline (http://127.0.0.1:8000). Start backend with run.bat or "python -m uvicorn backend.main:app".'}
+              </span>
+            </div>
+            {onRetryBackend && backendStatus !== 'CONNECTING' && (
+              <button
+                type="button"
+                onClick={onRetryBackend}
+                className="flex items-center space-x-1 px-2.5 py-1 rounded bg-[#1D2025] hover:bg-[#2A2D33] text-[#F4F4F2] border border-[#2A2D33] transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3 text-[#22C7E8]" />
+                <span>Retry Connection</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Primary Action Button: ANALYZE SEQUENCES */}
         <div className="pt-2 flex flex-col items-center justify-center space-y-3">

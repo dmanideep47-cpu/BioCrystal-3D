@@ -330,4 +330,13 @@ export interface CorrectionRecommendationResult {
   safeguards_notice: string;
 }
 
+export type BackendStatus = 'CONNECTING' | 'ONLINE' | 'OFFLINE' | 'ERROR';
+
+export interface BackendHealthResponse {
+  status: 'healthy' | 'degraded' | string;
+  service: string;
+  version: string;
+  biopython_version?: string;
+}
+
 

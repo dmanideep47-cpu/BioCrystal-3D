@@ -31,10 +31,13 @@ app = FastAPI(
     description="Scientific computational biology backend for 3D DNA visualization, mutation analysis, and candidate correction."
 )
 
-# Enable CORS for frontend
+# Enable CORS for frontend (supports local dev proxy and configurable deployed origins)
+cors_env = os.environ.get("CORS_ORIGINS", "*")
+allowed_origins = [o.strip() for o in cors_env.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -114,10 +117,11 @@ class PDFExportRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
+    import Bio
     return {
         "status": "healthy",
-        "service": "BioCrystal 3D DNA Simulation API",
-        "biopython_version": "1.88",
+        "service": "BioCrystal 3D",
+        "biopython_version": getattr(Bio, "__version__", "1.83"),
         "version": "3.0.0",
     }
 
