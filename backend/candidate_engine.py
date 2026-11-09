@@ -150,6 +150,17 @@ def generate_correction_candidates(
 
     # MODE A: restoration to the explicitly supplied reference.
     if clean_ref is not None and candidate_mode == "reference_restoration":
+        if not bool(options.get("reference_context_confirmed", False)):
+            return {
+                **result,
+                "recommendation_status": "reference_context_not_confirmed",
+                "recommendation_notice": (
+                    "The sequences can be compared, but restoration candidates are withheld until you confirm "
+                    "that the selected reference matches the intended organism, locus, strand and transcript context."
+                ),
+                "safeguards_notice": "A pasted sequence or workspace default is not automatically an authoritative biological reference.",
+            }
+
         comparison = perform_pairwise_alignment(clean_ref, clean_obs, reading_frame, table_id)
         mutations = comparison.get("mutations", [])
         result["strategies_used"] = ["Reference-guided restoration"]
