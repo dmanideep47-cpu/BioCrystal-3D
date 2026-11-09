@@ -23,7 +23,7 @@ def test_substitution_after_insertion_uses_observed_codon_coordinates():
 
 
 def test_substitution_without_complete_codon_context_is_not_called_synonymous():
-    result = perform_pairwise_alignment("ATGGCTAA", "ATGGGTAA", reading_frame=1)
+    result = perform_pairwise_alignment("ATGGCTAA", "CTGGCTAA", reading_frame=1)
     substitution = next(item for item in result["mutations"] if item["type"] == "substitution")
 
     assert substitution["category"] == "non_coding"
