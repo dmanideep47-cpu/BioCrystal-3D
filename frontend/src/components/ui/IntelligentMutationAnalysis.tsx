@@ -73,6 +73,8 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
 
   // Confirmation modal state
   const [candidateToApply, setCandidateToApply] = useState<CorrectionCandidate | null>(null);
+  const [appliedFromSequence, setAppliedFromSequence] = useState<string | null>(null);
+  const [appliedCandidate, setAppliedCandidate] = useState<CorrectionCandidate | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   // Quick initial validation
@@ -174,6 +176,8 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
     const targetSeq = candidateToApply.sequence;
     const activeRef = useReference && refInput.trim() ? refInput.trim() : undefined;
 
+    setAppliedFromSequence(obsInput.trim());
+    setAppliedCandidate(candidateToApply);
     onApplySequence(
       targetSeq,
       activeRef,
@@ -198,6 +202,8 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
         molecular_weight_kda: obsValidation.molecularWeightKDa,
         mutations_list: compareResult ? compareResult.alignment.mutations : null,
         candidates: candidatesList,
+        before_sequence: appliedFromSequence,
+        applied_candidate: appliedCandidate,
         recommendation_status: recommendationStatus,
         recommendation_notice: recommendationNotice,
         ranking_basis: rankingBasis,
