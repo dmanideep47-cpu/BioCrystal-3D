@@ -138,7 +138,7 @@ def generate_correction_candidates(
             "resulting_gc_percent": gc_value,
             "gc_delta": round(gc_value - observed_validation["gc_percent"], 1),
             "protein_sequence": protein,
-            "protein_preserved": protein == (_protein(clean_obs, reading_frame, table) if not clean_ref else reference_protein),
+            "protein_preserved": protein == _protein(clean_obs, reading_frame, table),
             "protein_matches_reference": protein == reference_protein if reference_protein is not None else None,
             "premature_stop_detected": _has_internal_stop(protein),
             "constraint_violations": violations,
