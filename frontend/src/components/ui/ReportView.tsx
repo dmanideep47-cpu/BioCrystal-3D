@@ -196,6 +196,11 @@ export const ReportView: React.FC<ReportViewProps> = ({
                     molecular_weight_kda: validation.molecularWeightKDa,
                     mutation_diff: mutationDiff,
                     reference_sequence: referenceSeq ? referenceSeq.sequence : null,
+                    mutations_list: analysisResult?.alignment?.mutations,
+                    structure_mapping: analysisResult?.structure_mapping,
+                    gene: analysisResult?.structure_mapping?.provenance?.title,
+                    organism: analysisResult?.structure_mapping?.provenance?.organism,
+                    analysis_result: analysisResult,
                   }),
                 });
                 if (res.ok) {

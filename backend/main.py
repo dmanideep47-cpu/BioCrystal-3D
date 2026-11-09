@@ -100,6 +100,12 @@ class PDFExportRequest(BaseModel):
     mutations_list: Optional[List[Dict[str, Any]]] = None
     candidates: Optional[List[Dict[str, Any]]] = None
     analysis_mode: Optional[str] = "reference_based"
+    structure_mapping: Optional[Dict[str, Any]] = None
+    structure: Optional[Dict[str, Any]] = None
+    gene: Optional[str] = None
+    organism: Optional[str] = None
+    alignment: Optional[Dict[str, Any]] = None
+    analysis_result: Optional[Dict[str, Any]] = None
 
 
 # ==============================================================================

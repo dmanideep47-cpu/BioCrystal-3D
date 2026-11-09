@@ -146,3 +146,4 @@ export const AlignedSequenceRibbon: React.FC<AlignedSequenceRibbonProps> = ({
     </div>
   );
 };
+

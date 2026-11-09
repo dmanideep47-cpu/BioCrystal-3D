@@ -78,3 +78,4 @@ export async function exportPdfAPI(data: any): Promise<Blob> {
   }
   return response.blob();
 }
+
