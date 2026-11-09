@@ -3,6 +3,7 @@ import {
   SequenceValidationResult,
   MutationDiff,
   ReferenceSequence,
+  FullAnalysisResult,
 } from '../../types/dna';
 import {
   generateComplementaryStrand,
@@ -14,6 +15,7 @@ import {
   Database,
   Printer,
   ShieldCheck,
+  Layers,
 } from 'lucide-react';
 
 interface ReportViewProps {
@@ -22,6 +24,7 @@ interface ReportViewProps {
   mutationDiff: MutationDiff | null;
   validation: SequenceValidationResult;
   referenceSeq?: ReferenceSequence | null;
+  analysisResult?: FullAnalysisResult | null;
 }
 
 export const ReportView: React.FC<ReportViewProps> = ({
@@ -30,6 +33,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   mutationDiff,
   validation,
   referenceSeq,
+  analysisResult,
 }) => {
   const compOrig = generateComplementaryStrand(originalSequence);
   const [reportDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -360,6 +364,56 @@ export const ReportView: React.FC<ReportViewProps> = ({
             </div>
           )}
         </div>
+
+        {/* 2b. Structural Mapping Profile */}
+        {analysisResult?.structure_mapping && (
+          <div className="space-y-2.5 pt-2 border-t border-[#292929]">
+            <h4 className="text-xs font-bold text-[#f5f5f5] uppercase tracking-wider flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-[#22C7E8]" />
+              <span>3. 3D Macromolecular Structural Mapping & Biological Impact</span>
+            </h4>
+
+            {analysisResult.structure_mapping.mapped && analysisResult.structure_mapping.provenance ? (
+              <div className="bg-[#101010] border border-[#292929] rounded p-3.5 space-y-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between text-[11px] pb-2 border-b border-[#292929]">
+                  <span className="font-bold text-[#f5f5f5]">
+                    PDB ID: {analysisResult.structure_mapping.pdb_id} (Chain {analysisResult.structure_mapping.chain})
+                  </span>
+                  <span className="text-[#35C98A]">
+                    {analysisResult.structure_mapping.provenance.method} ({analysisResult.structure_mapping.provenance.resolution})
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {analysisResult.structure_mapping.mappings.map((m, idx) => (
+                    <div key={idx} className="p-2.5 rounded bg-[#151515] border border-[#292929] space-y-1">
+                      <div className="flex justify-between font-bold">
+                        <span className="text-[#ff7417]">
+                          Residue #{m.residue_number} ({m.original_residue} &rarr; {m.mutated_residue})
+                        </span>
+                        <span className="text-[#35C98A] text-[10px]">{m.impact_label}</span>
+                      </div>
+                      <div className="text-[11px] text-[#a3a3a3]">
+                        <strong>Region:</strong> {m.structural_region}
+                      </div>
+                      <div className="text-[10px] text-[#70757D] font-sans">
+                        {m.impact_rationale}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-1.5 text-[10px] text-[#70757D] font-sans">
+                  <strong>Provenance Note:</strong> {analysisResult.structure_mapping.provenance.disclaimer}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded bg-[#101010] border border-[#292929] text-xs text-[#70757D] font-sans">
+                {analysisResult.structure_mapping.reason || 'No 3D structural mapping available for this sequence.'}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 3. Authoritative Biological Data Sources */}
         <div className="space-y-1.5 pt-2 border-t border-[#292929] text-xs">

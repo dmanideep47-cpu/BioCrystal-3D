@@ -18,6 +18,11 @@ from bio_engine import (
     perform_exploratory_analysis,
     generate_correction_candidates,
 )
+from structure_engine import (
+    fetch_pdb_file,
+    map_mutations_to_structure,
+    GENE_STRUCTURE_REGISTRY,
+)
 from pdf_generator import generate_pdf_report
 
 app = FastAPI(
@@ -57,6 +62,17 @@ class CompareRequest(BaseModel):
     observed_sequence: str
     reading_frame: Optional[int] = Field(0, ge=0, le=2)
     table_id: Optional[int] = 1
+    gene: Optional[str] = None
+    pdb_id: Optional[str] = None
+    is_coding: Optional[bool] = True
+
+
+class StructureMapRequest(BaseModel):
+    gene: Optional[str] = None
+    pdb_id: Optional[str] = None
+    mutations: List[Dict[str, Any]]
+    is_coding: Optional[bool] = True
+    reading_frame: Optional[int] = 0
 
 
 class AnnotateRequest(BaseModel):
@@ -160,11 +176,42 @@ def api_compare(req: CompareRequest):
         table_id=req.table_id or 1,
     )
 
+    structure_mapping = map_mutations_to_structure(
+        gene=req.gene,
+        pdb_id=req.pdb_id,
+        mutations=alignment_res.get("mutations", []),
+        is_coding=req.is_coding if req.is_coding is not None else True,
+        reading_frame=req.reading_frame or 0,
+    )
+
     return {
         "reference_validation": ref_val,
         "observed_validation": obs_val,
         "alignment": alignment_res,
+        "structure_mapping": structure_mapping,
     }
+
+
+@app.get("/api/pdb/{pdb_id}")
+def api_get_pdb(pdb_id: str):
+    pdb_text = fetch_pdb_file(pdb_id)
+    if not pdb_text:
+        raise HTTPException(
+            status_code=404,
+            detail=f"PDB structure '{pdb_id}' could not be located or retrieved from RCSB PDB."
+        )
+    return Response(content=pdb_text, media_type="text/plain")
+
+
+@app.post("/api/structure/map")
+def api_structure_map(req: StructureMapRequest):
+    return map_mutations_to_structure(
+        gene=req.gene,
+        pdb_id=req.pdb_id,
+        mutations=req.mutations,
+        is_coding=req.is_coding if req.is_coding is not None else True,
+        reading_frame=req.reading_frame or 0,
+    )
 
 
 @app.post("/api/annotate")

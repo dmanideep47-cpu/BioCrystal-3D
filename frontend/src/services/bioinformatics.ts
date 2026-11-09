@@ -90,6 +90,22 @@ export const STANDARD_GENETIC_CODE: Record<string, string> = {
 // Reference Sequences Catalog with authentic NCBI RefSeq and PDB identifiers
 export const REFERENCE_SEQUENCES: ReferenceSequence[] = [
   {
+    id: 'human-kras-g12c',
+    name: 'Human KRAS GTPase (G12C Oncogenic Target - AMG 510 Benchmark)',
+    organism: 'Homo sapiens',
+    geneSymbol: 'KRAS',
+    accessionNumber: 'NCBI RefSeq: NM_004985.5',
+    database: 'NCBI RefSeq',
+    sequence: 'ATGACTGAATATAAACTTGTGGTAGTTGGAGCTGGTGGCGTAGGCAAGAGTGCCTTGACG',
+    description: 'Exon 2 of human KRAS proto-oncogene encoding the P-loop (residues 10-17). The c.34G>T transversion alters codon 12 from GGT (Gly) to TGT (Cys), creating the nucleophilic pocket targeted by covalent inhibitor AMG 510 (Sotorasib, PDB: 6OIM).',
+    demonstrationMutation: {
+      position: 34,
+      newBase: 'T',
+      rationale: 'Substitutes G -> T at position 34 (GGT -> TGT, Gly12Cys), locking KRAS in a persistent active GTP-bound state driving oncogenic signaling.',
+    },
+    pdbId: '6OIM',
+  },
+  {
     id: 'demo-initial',
     name: 'Demonstration Sequence (B-DNA Coding Segment)',
     organism: 'Synthetic / Educational Model',

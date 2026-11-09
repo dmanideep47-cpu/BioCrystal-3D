@@ -243,6 +243,81 @@ export interface CompareResult {
     aligned_reference: string;
     aligned_observed: string;
   };
+  structure_mapping?: StructureMappingResult;
+}
+
+export interface AnalysisContext {
+  organism: string;
+  gene: string;
+  accession: string;
+  sequenceType: 'coding' | 'non_coding' | 'unknown';
+  strandOrientation: 'forward' | 'reverse_complement' | 'unknown';
+  readingFrame: 0 | 1 | 2 | -1;
+  geneticCode: GeneticCodeTable;
+}
+
+export interface AnalysisOptions {
+  detectDifferences: boolean;
+  referenceGuided: boolean;
+  codingConsequence: boolean;
+  structuralMapping: boolean;
+  generateReport: boolean;
+}
+
+export interface MappedResidue {
+  mutation_ref_pos: number;
+  mutation_type: string;
+  dna_variant: string;
+  chain: string;
+  residue_number: number;
+  original_residue: string;
+  mutated_residue: string;
+  structural_region: string;
+  mapping_confidence: string;
+  is_mapped: boolean;
+  impact_category: 'high' | 'moderate' | 'low' | 'uncertain';
+  impact_label: string;
+  impact_rationale: string;
+  limitation: string;
+}
+
+export interface StructureProvenance {
+  database: string;
+  pdb_id: string;
+  organism: string;
+  title: string;
+  method: string;
+  resolution: string;
+  chain: string;
+  experimental_status: string;
+  model_type: string;
+  mutant_structure_available: boolean;
+  disclaimer: string;
+}
+
+export interface StructureMappingResult {
+  mapped: boolean;
+  pdb_id: string | null;
+  chain: string | null;
+  status: string;
+  reason?: string | null;
+  mappings: MappedResidue[];
+  provenance: StructureProvenance | null;
+}
+
+export interface FullAnalysisResult {
+  reference_validation: SequenceValidationResult;
+  observed_validation: SequenceValidationResult;
+  alignment: {
+    alignment_score: number;
+    identity_percent: number;
+    mutation_count: number;
+    mutations: AlignmentMutation[];
+    aligned_reference: string;
+    aligned_observed: string;
+  };
+  structure_mapping: StructureMappingResult;
+  pdb_data?: string | null;
 }
 
 export interface CorrectionRecommendationResult {

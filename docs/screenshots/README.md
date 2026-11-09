@@ -6,3 +6,4 @@ Place application interface screenshots here:
 - `mutation-lab.png`: Real-time point mutation and indel workbench
 - `comparison-view.png`: Split-screen reference vs mutated comparison
 - `scientific-report.png`: Biopython assessment report & PDF export
+
