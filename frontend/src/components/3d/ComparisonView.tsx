@@ -19,6 +19,7 @@ interface ComparisonViewProps {
   mutatedSequence: string;
   mutationDiff: MutationDiff | null;
   mutatedPositions?: Set<number>;
+  baselineMutatedPositions?: Set<number>;
   isCandidateComparison?: boolean;
   visualizationMode: VisualizationMode;
   qualityPreset: QualityPreset;
@@ -36,6 +37,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
   mutatedSequence,
   mutationDiff,
   mutatedPositions,
+  baselineMutatedPositions,
   isCandidateComparison = false,
   visualizationMode,
   qualityPreset,
@@ -173,7 +175,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
                 visualizationMode={visualizationMode}
                 selectedPosition={selectedPosition}
                 selectedStrand={selectedStrand}
-                mutatedPositions={emptySet}
+                mutatedPositions={isCandidateComparison ? (baselineMutatedPositions || emptySet) : emptySet}
                 qualityPreset={qualityPreset}
                 onSelectNucleotide={onSelectNucleotide}
                 hoveredPosition={hoveredPosition}
