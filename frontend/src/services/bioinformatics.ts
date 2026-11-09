@@ -566,72 +566,26 @@ export async function compareSequences(
   observedSequence: string,
   readingFrame: number = 0
 ): Promise<CompareResult> {
-  try {
-    const res = await fetch('/api/compare', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        reference_sequence: referenceSequence,
-        observed_sequence: observedSequence,
-        reading_frame: readingFrame,
-      }),
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch {
-    // fallback client-side comparison if backend unreachable
+  const res = await fetch('/api/compare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      reference_sequence: referenceSequence,
+      observed_sequence: observedSequence,
+      reading_frame: readingFrame,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      detail || `Reference-aware alignment failed with HTTP ${res.status}. Start the BioCrystal backend and retry.`
+    );
   }
 
-  // Client-side fallback implementation
-  const refVal = validateDNASequence(referenceSequence);
-  const obsVal = validateDNASequence(observedSequence);
-  const mutations: AlignmentMutation[] = [];
-
-  const maxLen = Math.max(refVal.cleanedSequence.length, obsVal.cleanedSequence.length);
-  for (let i = 0; i < maxLen; i++) {
-    const r = refVal.cleanedSequence[i] || '-';
-    const o = obsVal.cleanedSequence[i] || '-';
-    if (r !== o) {
-      const pos = i + 1;
-      const codonIdx = Math.floor((i - readingFrame) / 3);
-      const start = readingFrame + codonIdx * 3;
-      const rCodon = refVal.cleanedSequence.substring(start, start + 3) || null;
-      const oCodon = obsVal.cleanedSequence.substring(start, start + 3) || null;
-      const rAA = rCodon && rCodon.length === 3 ? translateCodon(rCodon) : AMINO_ACIDS['?'];
-      const oAA = oCodon && oCodon.length === 3 ? translateCodon(oCodon) : AMINO_ACIDS['?'];
-
-      const isSyn = rAA.code3 === oAA.code3;
-      mutations.push({
-        type: r === '-' ? 'insertion' : o === '-' ? 'deletion' : 'substitution',
-        reference_position: pos,
-        observed_position: pos,
-        original_base: r,
-        observed_base: o,
-        affected_codon_index: codonIdx + 1,
-        reference_codon: rCodon,
-        observed_codon: oCodon,
-        original_amino_acid: rAA,
-        observed_amino_acid: oAA,
-        category: isSyn ? 'synonymous' : oAA.code3 === 'Stop' ? 'nonsense' : 'missense',
-        category_label: isSyn ? 'Synonymous (Silent)' : oAA.code3 === 'Stop' ? 'Nonsense' : 'Missense',
-        description: `Locus ${pos}: ${r} -> ${o} (codon ${rCodon} -> ${oCodon}, amino acid ${rAA.name} -> ${oAA.name}).`,
-      });
-    }
-  }
-
-  return {
-    reference_validation: refVal,
-    observed_validation: obsVal,
-    alignment: {
-      alignment_score: 100 - mutations.length * 5,
-      identity_percent: Math.round(((maxLen - mutations.length) / maxLen) * 100),
-      mutation_count: mutations.length,
-      mutations,
-      aligned_reference: refVal.cleanedSequence,
-      aligned_observed: obsVal.cleanedSequence,
-    },
-  };
+  // Indel-aware coordinate mapping is only performed by the backend aligner.
+  // Do not silently replace it with an index-by-index browser comparison.
+  return await res.json();
 }
 
 /**
