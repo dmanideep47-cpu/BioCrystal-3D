@@ -136,6 +136,37 @@ class TestBioCrystalMutationEngine(unittest.TestCase):
         self.assertEqual(aa_act["name"], "Threonine")
         self.assertEqual(aa_acg["name"], "Threonine")
 
+    def test_alignment_coordinates_for_substitutions_insertions_and_deletions(self):
+        identical = perform_pairwise_alignment("ACGTACGT", "ACGTACGT", is_coding=False)
+        self.assertEqual(identical["mutation_count"], 0)
+
+        substitutions = perform_pairwise_alignment("ACGTACGT", "TCGTTCGA", is_coding=False)
+        self.assertEqual(
+            [(m["reference_position"], m["observed_position"]) for m in substitutions["mutations"]],
+            [(1, 1), (5, 5), (8, 8)],
+        )
+        self.assertTrue(all(m["category"] == "non_coding" for m in substitutions["mutations"]))
+        self.assertIsNone(substitutions["mutations"][0]["reference_codon"])
+
+        insertion = perform_pairwise_alignment("ACGTACGT", "ACGTTACGT", is_coding=False)
+        insertion_event = insertion["mutations"][0]
+        self.assertEqual(insertion_event["type"], "insertion")
+        self.assertEqual(insertion_event["observed_position"], 4)
+        self.assertEqual(insertion_event["reference_left_position"], 3)
+        self.assertEqual(insertion_event["reference_right_position"], 4)
+
+        deletion = perform_pairwise_alignment("ACGTACGT", "ACGACGT", is_coding=False)
+        deletion_event = deletion["mutations"][0]
+        self.assertEqual(deletion_event["type"], "deletion")
+        self.assertEqual(deletion_event["reference_position"], 4)
+        self.assertEqual(deletion_event["reference_end_position"], 4)
+        self.assertEqual(deletion_event["observed_position"], 4)
+
+    def test_repeat_region_alignment_reports_unresolved_equivalent_placement(self):
+        result = perform_pairwise_alignment("CAAAAAG", "CAAAAG", is_coding=False)
+        self.assertEqual(result["mutations"][0]["reference_position"], 2)
+        self.assertIn("not independently normalized", result["normalization"])
+
 
 if __name__ == "__main__":
     unittest.main()

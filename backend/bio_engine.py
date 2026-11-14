@@ -258,7 +258,8 @@ def perform_pairwise_alignment(
     ref_seq: str,
     obs_seq: str,
     reading_frame: int = 0,
-    table_id: int = 1
+    table_id: int = 1,
+    is_coding: bool = True,
 ) -> Dict[str, Any]:
     """
     Performs pairwise global alignment between reference and observed sequence
@@ -313,40 +314,51 @@ def perform_pairwise_alignment(
             curr_ref_pos = ref_pos
             curr_obs_pos = obs_pos
 
-            # Codon context in reference
             codon_idx = (curr_ref_pos - 1 - reading_frame) // 3
-            codon_start = reading_frame + codon_idx * 3
-            ref_codon = clean_ref[codon_start:codon_start + 3] if len(clean_ref) >= codon_start + 3 else None
-            obs_codon = clean_obs[codon_start:codon_start + 3] if len(clean_obs) >= codon_start + 3 else None
+            ref_codon = None
+            obs_codon = None
+            ref_aa = AMINO_ACID_METADATA['?']
+            obs_aa = AMINO_ACID_METADATA['?']
+            is_trans = None
 
-            ref_aa = get_amino_acid_info(ref_codon, table_id)
-            obs_aa = get_amino_acid_info(obs_codon, table_id)
+            if is_coding:
+                ref_codon_start = reading_frame + codon_idx * 3
+                obs_codon_idx = (curr_obs_pos - 1 - reading_frame) // 3
+                obs_codon_start = reading_frame + obs_codon_idx * 3
+                ref_codon = clean_ref[ref_codon_start:ref_codon_start + 3] if ref_codon_start >= 0 else None
+                obs_codon = clean_obs[obs_codon_start:obs_codon_start + 3] if obs_codon_start >= 0 else None
 
-            is_orig_purine = orig_base in ('A', 'G')
-            is_mut_purine = new_base in ('A', 'G')
-            is_trans = is_orig_purine == is_mut_purine
+                ref_aa = get_amino_acid_info(ref_codon, table_id)
+                obs_aa = get_amino_acid_info(obs_codon, table_id)
 
-            if ref_aa['code3'] == obs_aa['code3']:
-                category = "synonymous"
-                category_label = "Synonymous (Silent)"
-                desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} (codon {ref_codon} -> {obs_codon}) preserves amino acid {ref_aa['name']} ({ref_aa['code3']})."
-            elif obs_aa['code3'] == 'Stop':
-                category = "nonsense"
-                category_label = "Nonsense (Stop-gain)"
-                desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} generates a premature stop codon ({obs_codon}), terminating translation."
-            elif ref_aa['code3'] == 'Stop' and obs_aa['code3'] != 'Stop':
-                category = "stop_loss"
-                category_label = "Stop-loss"
-                desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} alters stop codon ({ref_codon} -> {obs_codon}), continuing translation."
-            elif codon_idx == 0 and ref_codon == 'ATG' and obs_codon != 'ATG':
-                category = "start_loss"
-                category_label = "Start-loss"
-                desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} alters initiator methionine codon (ATG -> {obs_codon})."
+                is_orig_purine = orig_base in ('A', 'G')
+                is_mut_purine = new_base in ('A', 'G')
+                is_trans = is_orig_purine == is_mut_purine
+
+                if ref_aa['code3'] == obs_aa['code3']:
+                    category = "synonymous"
+                    category_label = "Synonymous"
+                    desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} changes codon {ref_codon} to {obs_codon} and preserves {ref_aa['name']}."
+                elif obs_aa['code3'] == 'Stop':
+                    category = "nonsense"
+                    category_label = "Stop gain"
+                    desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} changes codon {ref_codon} to stop codon {obs_codon}."
+                elif ref_aa['code3'] == 'Stop' and obs_aa['code3'] != 'Stop':
+                    category = "stop_loss"
+                    category_label = "Stop loss"
+                    desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} changes stop codon {ref_codon} to {obs_codon}."
+                elif codon_idx == 0 and ref_codon == 'ATG' and obs_codon != 'ATG':
+                    category = "start_loss"
+                    category_label = "Start codon change"
+                    desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} changes the initial codon from ATG to {obs_codon}."
+                else:
+                    category = "missense"
+                    category_label = "Amino-acid substitution"
+                    desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} changes codon {ref_codon} to {obs_codon}."
             else:
-                category = "missense"
-                category_label = "Missense"
-                chem_shift = f"non-conservative ({ref_aa['category']} -> {obs_aa['category']})" if ref_aa['category'] != obs_aa['category'] else f"conservative ({ref_aa['category']})"
-                desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} alters codon {ref_codon} -> {obs_codon}, replacing {ref_aa['name']} with {obs_aa['name']} ({chem_shift})."
+                category = "non_coding"
+                category_label = "Sequence substitution"
+                desc = f"Substitution {orig_base}{curr_ref_pos}{new_base} relative to the selected reference."
 
             mutations.append({
                 "type": "substitution",
@@ -354,7 +366,7 @@ def perform_pairwise_alignment(
                 "observed_position": curr_obs_pos,
                 "original_base": orig_base,
                 "observed_base": new_base,
-                "affected_codon_index": codon_idx + 1,
+                "affected_codon_index": codon_idx + 1 if is_coding else None,
                 "reference_codon": ref_codon,
                 "observed_codon": obs_codon,
                 "original_amino_acid": ref_aa,
@@ -380,7 +392,11 @@ def perform_pairwise_alignment(
             ins_str = "".join(ins_bases)
             ins_len = len(ins_str)
 
-            if ins_len % 3 == 0:
+            if not is_coding:
+                cat = "non_coding"
+                cat_label = "Sequence insertion"
+                desc = f"Insertion of {ins_len} bp ({ins_str}) relative to the selected reference."
+            elif ins_len % 3 == 0:
                 cat = "inframe_insertion"
                 cat_label = f"In-frame Insertion (+{ins_len // 3} AA)"
                 desc = f"Insertion of {ins_len} bp ({ins_str}) preserves downstream reading frame."
@@ -392,6 +408,8 @@ def perform_pairwise_alignment(
             mutations.append({
                 "type": "insertion",
                 "reference_position": curr_ref_pos,
+                "reference_left_position": curr_ref_pos - 1 if curr_ref_pos > 1 else None,
+                "reference_right_position": curr_ref_pos if curr_ref_pos <= len(clean_ref) else None,
                 "observed_position": start_obs_pos,
                 "original_base": "-",
                 "observed_base": ins_str,
@@ -418,7 +436,11 @@ def perform_pairwise_alignment(
             del_str = "".join(del_bases)
             del_len = len(del_str)
 
-            if del_len % 3 == 0:
+            if not is_coding:
+                cat = "non_coding"
+                cat_label = "Sequence deletion"
+                desc = f"Deletion of reference bases {start_ref_pos}-{start_ref_pos + del_len - 1} ({del_str})."
+            elif del_len % 3 == 0:
                 cat = "inframe_deletion"
                 cat_label = f"In-frame Deletion (-{del_len // 3} AA)"
                 desc = f"Deletion of {del_len} bp ({del_str}) deletes {del_len // 3} amino acid(s) while preserving downstream frame."
@@ -430,6 +452,7 @@ def perform_pairwise_alignment(
             mutations.append({
                 "type": "deletion",
                 "reference_position": start_ref_pos,
+                "reference_end_position": start_ref_pos + del_len - 1,
                 "observed_position": curr_obs_pos,
                 "original_base": del_str,
                 "observed_base": "-",
@@ -445,7 +468,7 @@ def perform_pairwise_alignment(
                 "description": desc,
             })
 
-    identity_pct = round((identical_matches / max(len(clean_ref), len(clean_obs), 1)) * 100, 1)
+    identity_pct = round((identical_matches / max(total_len, 1)) * 100, 1)
 
     return {
         "alignment_score": float(al.score),
@@ -454,6 +477,14 @@ def perform_pairwise_alignment(
         "mutations": mutations,
         "aligned_reference": aligned_ref,
         "aligned_observed": aligned_obs,
+        "method": "Biopython PairwiseAligner global alignment",
+        "scoring": {
+            "match": 2,
+            "mismatch": -1,
+            "gap_open": -2.5,
+            "gap_extend": -1,
+        },
+        "normalization": "The first optimal alignment returned by PairwiseAligner is reported; equivalent repeat-region placements are not independently normalized.",
     }
 
 
@@ -731,7 +762,7 @@ def generate_correction_candidates(
                 "premature_stop_detected": '*' in ref_protein[:-1] if ref_protein else False,
                 "constraint_violations": [],
                 "score": 98.0,
-                "rationale": "Directly restores observed sequence to match the authoritative wild-type reference sequence.",
+                "rationale": "Restores the observed sequence to match the user-supplied reference sequence.",
                 "scientific_limitation": "Assumes the supplied reference represents the intended wild-type biological state.",
             })
 
@@ -852,3 +883,346 @@ def generate_correction_candidates(
             "Never implement sequence alterations without explicit biological verification and reference alignment."
         )
     }
+
+
+# ==============================================================================
+# MODE D: VIRTUAL MUTATION LAB EDUCATIONAL ANALYSIS ENGINE
+# ==============================================================================
+
+MAX_EDUCATIONAL_SEQ_LENGTH = 10000
+
+
+def analyze_mutation_experiment(
+    reference_seq: str,
+    variant_seq: str,
+    prediction: Optional[Dict[str, Any]] = None,
+    reading_frame: int = 0,
+    table_id: int = 1,
+) -> Dict[str, Any]:
+    """
+    BioCrystal Virtual Mutation Lab educational engine.
+    Analyzes how changes in a declared 5' -> 3' protein-coding DNA sequence
+    alter codon triplet grouping, stop codon placement, and translation product.
+    NCBI Standard Genetic Code (Table 1), Frame 0 educational assumptions.
+    """
+    ref_val = validate_dna_sequence(reference_seq)
+    var_val = validate_dna_sequence(variant_seq)
+
+    errors: List[str] = []
+    if not ref_val["is_valid"]:
+        errors.append(f"Reference sequence invalid: {', '.join(ref_val['errors'])}")
+    if not var_val["is_valid"]:
+        errors.append(f"Variant sequence invalid: {', '.join(var_val['errors'])}")
+
+    if ref_val["length"] > MAX_EDUCATIONAL_SEQ_LENGTH:
+        errors.append(f"Reference sequence length ({ref_val['length']} bp) exceeds maximum supported limit ({MAX_EDUCATIONAL_SEQ_LENGTH} bp).")
+    if var_val["length"] > MAX_EDUCATIONAL_SEQ_LENGTH:
+        errors.append(f"Variant sequence length ({var_val['length']} bp) exceeds maximum supported limit ({MAX_EDUCATIONAL_SEQ_LENGTH} bp).")
+
+    if errors:
+        return {
+            "success": False,
+            "errors": errors,
+            "reference_validation": ref_val,
+            "variant_validation": var_val,
+        }
+
+    clean_ref = ref_val["cleaned_sequence"]
+    clean_var = var_val["cleaned_sequence"]
+    table = CodonTable.unambiguous_dna_by_id[table_id]
+
+    # Codon decomposition for reference
+    ref_frame_seq = clean_ref[reading_frame:]
+    ref_codon_count = len(ref_frame_seq) // 3
+    ref_codons: List[str] = [ref_frame_seq[i * 3: (i + 1) * 3] for i in range(ref_codon_count)]
+    ref_trailing_len = len(ref_frame_seq) % 3
+    ref_trailing_bases = ref_frame_seq[-ref_trailing_len:] if ref_trailing_len > 0 else ""
+
+    # Codon decomposition for variant
+    var_frame_seq = clean_var[reading_frame:]
+    var_codon_count = len(var_frame_seq) // 3
+    var_codons: List[str] = [var_frame_seq[i * 3: (i + 1) * 3] for i in range(var_codon_count)]
+    var_trailing_len = len(var_frame_seq) % 3
+    var_trailing_bases = var_frame_seq[-var_trailing_len:] if var_trailing_len > 0 else ""
+
+    # Full codon-by-codon translation strings
+    def translate_triplets(triplets: List[str]) -> Tuple[str, List[Dict[str, Any]]]:
+        aa_chars = []
+        details = []
+        for idx, tri in enumerate(triplets):
+            if tri in table.stop_codons:
+                aa = '*'
+            else:
+                aa = table.forward_table.get(tri, '?')
+            aa_chars.append(aa)
+            meta = AMINO_ACID_METADATA.get(aa, AMINO_ACID_METADATA['?'])
+            details.append({
+                "codon_index": idx + 1,
+                "triplet": tri,
+                "amino_acid_code1": aa,
+                "amino_acid_code3": meta["code3"],
+                "amino_acid_name": meta["name"],
+                "is_stop": tri in table.stop_codons,
+                "is_start": tri == "ATG",
+            })
+        return "".join(aa_chars), details
+
+    ref_translation_str, ref_codon_details = translate_triplets(ref_codons)
+    var_translation_str, var_codon_details = translate_triplets(var_codons)
+
+    # Educational protein product (stops at first in-frame stop '*')
+    def get_protein_product(trans_str: str) -> Tuple[str, Optional[int]]:
+        stop_idx = trans_str.find('*')
+        if stop_idx != -1:
+            return trans_str[:stop_idx], stop_idx + 1  # 1-based stop codon position
+        return trans_str, None
+
+    ref_protein_product, ref_first_stop = get_protein_product(ref_translation_str)
+    var_protein_product, var_first_stop = get_protein_product(var_translation_str)
+
+    # Detect first affected codon
+    first_affected_codon: Optional[int] = None
+    min_codons = min(ref_codon_count, var_codon_count)
+    for c_idx in range(min_codons):
+        if ref_codons[c_idx] != var_codons[c_idx]:
+            first_affected_codon = c_idx + 1
+            break
+    if first_affected_codon is None and ref_codon_count != var_codon_count:
+        first_affected_codon = min_codons + 1
+
+    # Scientific notes collection
+    notes: List[str] = [
+        "Educational translation assumes 5' -> 3' coding strand, fixed reading frame 0, and standard genetic code (NCBI Table 1).",
+    ]
+
+    start_codon_changed = False
+    if clean_ref.startswith("ATG") and not clean_var.startswith("ATG"):
+        start_codon_changed = True
+        notes.append("The starting codon has changed. Fixed-frame translation is shown, but biological initiation is not modeled.")
+
+    if var_first_stop is None:
+        notes.append("No in-frame stop codon occurs within the supplied sequence.")
+    elif var_first_stop < var_codon_count:
+        notes.append("Sequence beyond the first stop codon is not part of this translated product.")
+
+    if var_trailing_bases:
+        notes.append(f"Trailing incomplete codon (+{len(var_trailing_bases)} nt: {var_trailing_bases}) is not translated into an amino acid.")
+
+    # Classify mutation category
+    category: str = "unchanged"
+    category_label: str = "Unchanged"
+    explanation: str = "The variant sequence is identical to the reference sequence. No mutation detected."
+    reflection_question: str = "What happens if a mutation occurs in an untranslated region versus a coding region?"
+    reflection_model_answer: str = "Mutations in coding regions can change amino acid sequences or stop codons, whereas non-coding mutations may affect regulatory signals without directly altering peptide sequence."
+
+    len_diff = len(clean_var) - len(clean_ref)
+
+    if clean_ref == clean_var:
+        category = "unchanged"
+        category_label = "Unchanged"
+        explanation = "The variant sequence is identical to the reference sequence."
+    elif len_diff != 0:
+        # Indel: insertion or deletion
+        if len_diff % 3 == 0:
+            if len_diff > 0:
+                category = "inframe_indel"
+                category_label = f"In-frame Insertion (+{len_diff // 3} AA)"
+                explanation = f"A complete number of codons (+{len_diff // 3} triplet(s)) was inserted. The downstream reading frame is preserved."
+            else:
+                del_count = abs(len_diff) // 3
+                category = "inframe_indel"
+                category_label = f"In-frame Deletion (-{del_count} AA)"
+                explanation = f"A complete number of codons was removed ({del_count} triplet(s)). The downstream reading frame is preserved."
+            reflection_question = "How is an in-frame three-base deletion biologically different from a single-base deletion in a coding frame?"
+            reflection_model_answer = "Removing 3 nucleotides (1 full codon) keeps all following codons in their original reading frame, losing only 1 amino acid. A 1-base deletion shifts the reading frame for all downstream codons."
+        else:
+            category = "frameshift"
+            category_label = f"Frameshift ({'+' if len_diff > 0 else ''}{len_diff} bp)"
+            explanation = "This insertion or deletion changes the grouping of downstream bases into codons in the selected reading frame."
+            reflection_question = "Why did deleting or inserting a number of bases not divisible by three affect downstream codons?"
+            reflection_model_answer = "Because codons are read in continuous triplets, adding or removing 1 or 2 bases shifts the 3-base window, causing every subsequent codon to be read out of its original frame."
+    else:
+        # Same length: Substitution(s)
+        mismatches = sum(1 for r, v in zip(clean_ref, clean_var) if r != v)
+        if mismatches == 1:
+            if ref_translation_str == var_translation_str:
+                category = "synonymous"
+                category_label = "Synonymous (Silent)"
+                explanation = "The DNA changed, but this codon still specifies the same amino acid under the selected genetic code."
+                reflection_question = "Why did the DNA change without changing the amino acid?"
+                reflection_model_answer = "The genetic code is degenerate (redundant): multiple distinct 3-base codons can encode the exact same amino acid (e.g. GCT and GCC both encode Alanine)."
+            elif var_first_stop is not None and (ref_first_stop is None or var_first_stop < ref_first_stop):
+                category = "stop_gained"
+                category_label = "Stop-gained (Nonsense)"
+                explanation = "The edit introduces an earlier stop codon in this reading frame. The displayed translated product ends earlier."
+                reflection_question = "Why does an earlier stop codon shorten this translated product?"
+                reflection_model_answer = "During ribosome translation, a stop codon signals release factors to terminate peptide synthesis, leaving the protein truncated before the rest of the mRNA can be translated."
+            elif ref_first_stop is not None and (var_first_stop is None or var_first_stop > ref_first_stop):
+                category = "stop_lost"
+                category_label = "Stop-lost (Readthrough)"
+                explanation = "The edit alters the original termination codon, allowing translation to continue through downstream sequence."
+                reflection_question = "What happens to a protein when a natural stop codon is mutated into an amino acid codon?"
+                reflection_model_answer = "Translation continues past the normal termination site until another in-frame stop codon is encountered, adding extra amino acids to the C-terminus."
+            elif start_codon_changed:
+                category = "start_loss"
+                category_label = "Start-codon change"
+                explanation = "The starting codon has changed. Fixed-frame translation is shown, but biological initiation is not modeled."
+                reflection_question = "Why is the ATG start codon critical for protein synthesis in living cells?"
+                reflection_model_answer = "ATG specifies Methionine and provides the canonical initiation signal that establishes the reading frame on the ribosome."
+            else:
+                category = "missense"
+                category_label = "Missense (Amino-acid replacement)"
+                explanation = "The changed codon specifies a different amino acid. This calculation alone does not establish an effect on protein function."
+                reflection_question = "Why does changing an amino acid sometimes alter protein behavior and sometimes have little effect?"
+                reflection_model_answer = "It depends on where the amino acid is located in the folded structure (e.g. active site vs surface) and how different its chemical properties (charge, size, hydrophobicity) are from the original."
+        else:
+            # Multiple substitutions
+            if ref_translation_str == var_translation_str:
+                category = "synonymous"
+                category_label = "Multiple Synonymous Substitutions"
+                explanation = "Multiple nucleotide substitutions occurred, but all codons continue to encode the same amino acids."
+            else:
+                category = "complex_substitutions"
+                category_label = f"Multiple Substitutions ({mismatches} bp)"
+                explanation = f"Detected {mismatches} nucleotide substitutions between reference and variant."
+                reflection_question = "How do multiple mutations interact in a single coding sequence?"
+                reflection_model_answer = "Multiple mutations can combine their effects, sometimes altering several residue positions simultaneously."
+
+    # Prediction evaluation (if student provided prediction)
+    # Typed prediction choices:
+    # 'no_change'       -> No amino-acid change
+    # 'one_aa_change'   -> One amino acid is replaced
+    # 'early_stop'      -> Translation stops earlier
+    # 'frameshift'      -> The downstream reading frame changes
+    # 'inframe_indel'   -> Amino acids are added or removed without shifting the downstream frame
+    # 'not_sure'        -> Not sure
+    prediction_result: Optional[Dict[str, Any]] = None
+    if prediction:
+        choice = str(prediction.get("choice", "")).strip().lower()
+        rationale = prediction.get("rationale", "")
+
+        matched: Optional[bool] = None
+        status: str = "not_evaluated"
+        feedback: str = ""
+
+        choice_labels = {
+            "no_change": "No amino-acid change",
+            "one_aa_change": "One amino acid is replaced",
+            "early_stop": "Translation stops earlier",
+            "frameshift": "The downstream reading frame changes",
+            "inframe_indel": "Amino acids are added or removed without shifting the downstream frame",
+            "not_sure": "Not sure",
+        }
+        choice_label = choice_labels.get(choice, choice)
+
+        if choice in ("no_change", "no amino-acid change", "synonymous"):
+            if category in ("synonymous", "unchanged"):
+                matched = True
+                status = "correct"
+                feedback = "Correct! Your prediction matched: the nucleotide change did not alter the amino acid sequence because of codon degeneracy."
+            else:
+                matched = False
+                status = "diverged"
+                feedback = f"Your prediction was 'No amino-acid change', but the experiment resulted in {category_label}."
+        elif choice in ("one_aa_change", "missense", "one amino acid changes", "one amino acid is replaced"):
+            if category == "missense":
+                matched = True
+                status = "correct"
+                feedback = f"Correct! Your prediction matched: codon {first_affected_codon} was altered to specify a different amino acid."
+            else:
+                matched = False
+                status = "diverged"
+                feedback = f"Your prediction was 'One amino acid is replaced', but the experiment resulted in {category_label}."
+        elif choice in ("early_stop", "translation stops earlier", "stop_gained"):
+            if category == "stop_gained":
+                matched = True
+                status = "correct"
+                feedback = f"Correct! Your prediction matched: a premature stop codon was introduced at codon {var_first_stop}, truncating the translated product."
+            else:
+                matched = False
+                status = "diverged"
+                feedback = f"Your prediction was 'Translation stops earlier', but the experiment resulted in {category_label}."
+        elif choice in ("frameshift", "the reading frame changes", "the downstream reading frame changes"):
+            if category == "frameshift":
+                matched = True
+                status = "correct"
+                feedback = "Correct! Your prediction matched: the insertion/deletion length was not divisible by 3, altering downstream codon groupings."
+            else:
+                matched = False
+                status = "diverged"
+                feedback = f"Your prediction was 'The downstream reading frame changes', but the experiment resulted in {category_label}."
+        elif choice in ("inframe_indel", "amino acids are added or removed without shifting the downstream frame", "inframe_deletion", "inframe_insertion"):
+            if category == "inframe_indel":
+                matched = True
+                status = "correct"
+                feedback = "Correct! Your prediction matched: a complete number of codons was added or removed without altering the downstream reading frame."
+            else:
+                matched = False
+                status = "diverged"
+                feedback = f"Your prediction was 'Amino acids are added or removed without shifting the downstream frame', but the experiment resulted in {category_label}."
+        elif choice in ("not_sure", "not sure"):
+            matched = None
+            status = "not_sure"
+            feedback = f"Exploring without a prior hypothesis: This experiment resulted in {category_label}."
+        else:
+            matched = None
+            status = "not_evaluated"
+            feedback = f"Unrestricted edit: The observed outcome is {category_label}."
+
+        prediction_result = {
+            "choice": choice,
+            "choice_label": choice_label,
+            "rationale": rationale,
+            "matched": matched,
+            "status": status,
+            "feedback": feedback,
+        }
+
+    return {
+        "success": True,
+        "reference_sequence": clean_ref,
+        "variant_sequence": clean_var,
+        "reading_frame": reading_frame,
+        "genetic_code": "NCBI Standard (Table 1)",
+        "reference_length": len(clean_ref),
+        "variant_length": len(clean_var),
+        "reference_codons": ref_codons,
+        "variant_codons": var_codons,
+        "reference_codon_count": ref_codon_count,
+        "variant_codon_count": var_codon_count,
+        "reference_trailing_bases": ref_trailing_bases,
+        "variant_trailing_bases": var_trailing_bases,
+        "reference_translation": ref_translation_str,
+        "variant_translation": var_translation_str,
+        "reference_protein_product": ref_protein_product,
+        "variant_protein_product": var_protein_product,
+        "reference_first_stop_position": ref_first_stop,
+        "variant_first_stop_position": var_first_stop,
+        "first_affected_codon": first_affected_codon,
+        "start_codon_changed": start_codon_changed,
+        "mutation_category": category,
+        "category_label": category_label,
+        "explanation": explanation,
+        "notes": notes,
+        "prediction_evaluation": prediction_result,
+        "reflection": {
+            "question": reflection_question,
+            "model_answer": reflection_model_answer,
+        },
+        "codon_comparison": [
+            {
+                "codon_index": i + 1,
+                "ref_codon": ref_codons[i] if i < ref_codon_count else "-",
+                "var_codon": var_codons[i] if i < var_codon_count else "-",
+                "ref_aa": ref_codon_details[i]["amino_acid_code1"] if i < ref_codon_count else "-",
+                "var_aa": var_codon_details[i]["amino_acid_code1"] if i < var_codon_count else "-",
+                "is_changed": (
+                    i >= ref_codon_count
+                    or i >= var_codon_count
+                    or ref_codons[i] != var_codons[i]
+                ),
+            }
+            for i in range(max(ref_codon_count, var_codon_count))
+        ],
+    }
+

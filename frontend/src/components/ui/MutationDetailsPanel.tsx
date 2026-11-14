@@ -156,7 +156,7 @@ export const MutationDetailsPanel: React.FC<MutationDetailsPanelProps> = ({
 
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-[#111316] p-2 rounded border border-[#2A2D33]">
-                <span className="text-[9px] text-[#70757D] block">Wild-Type Codon</span>
+                <span className="text-[9px] text-[#70757D] block">Reference Codon</span>
                 <span className="font-bold text-[#35C98A] text-sm">{reference_codon}</span>
                 <span className="text-[10px] text-[#A0A3AA] block mt-0.5">
                   {original_amino_acid?.name} ({original_amino_acid?.code3})
@@ -221,38 +221,25 @@ export const MutationDetailsPanel: React.FC<MutationDetailsPanelProps> = ({
                   {mappedResidue.structural_region}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#70757D]">Confidence:</span>
-                <span className="text-[#35C98A]">{mappedResidue.mapping_confidence}</span>
-              </div>
+              {mappedResidue.pdb_residue && mappedResidue.pdb_residue !== 'undefined' && (
+                <div className="flex justify-between">
+                  <span className="text-[#70757D]">PDB residue:</span>
+                  <span className="text-[#F4F4F2]">{mappedResidue.pdb_residue}{mappedResidue.residue_number}</span>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-[11px] text-[#70757D] leading-relaxed">
-              No experimentally solved 3D protein structure could be confidently mapped to this sequence.
+              Molecular structure unavailable for this sequence.
             </p>
           )}
         </div>
 
-        {/* Biological Impact Assessment */}
         {mappedResidue && mappedResidue.is_mapped && (
           <div className="bg-[#17191D] p-3 rounded-md border border-[#2A2D33] space-y-2 text-xs">
             <span className="font-bold text-[#F4F4F2] block uppercase text-[10px] tracking-wider">
-              Biological Impact Assessment
+              Structure Mapping Limitation
             </span>
-
-            <div className={`p-2 rounded border text-[11px] font-semibold ${
-              mappedResidue.impact_category === 'high'
-                ? 'bg-[#FF6500]/10 border-[#FF6500]/30 text-[#FF6500]'
-                : mappedResidue.impact_category === 'moderate'
-                ? 'bg-[#F3B347]/10 border-[#F3B347]/30 text-[#F3B347]'
-                : 'bg-[#35C98A]/10 border-[#35C98A]/30 text-[#35C98A]'
-            }`}>
-              {mappedResidue.impact_label}
-            </div>
-
-            <p className="text-[11px] text-[#A0A3AA] leading-relaxed font-sans">
-              {mappedResidue.impact_rationale}
-            </p>
 
             <div className="pt-2 border-t border-[#2A2D33] text-[10px] text-[#70757D] font-sans">
               <strong>Limitation:</strong> {mappedResidue.limitation}
@@ -263,7 +250,7 @@ export const MutationDetailsPanel: React.FC<MutationDetailsPanelProps> = ({
 
       <div className="pt-2 border-t border-[#2A2D33] text-[10px] text-[#70757D] flex justify-between items-center">
         <span>Coordinate System: 1-Based</span>
-        <span className="text-[#35C98A]">VERIFIED</span>
+        <span className="text-[#35C98A]">PDB RESIDUE CHECKED</span>
       </div>
     </aside>
   );

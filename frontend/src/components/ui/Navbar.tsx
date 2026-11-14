@@ -124,7 +124,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             ) : (
               <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-[#35C98A]/15 text-[#35C98A] border border-[#35C98A]/35 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#35C98A]" />
                 CANONICAL WILD-TYPE
               </span>
             )}

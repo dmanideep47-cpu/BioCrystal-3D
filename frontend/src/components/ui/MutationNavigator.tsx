@@ -60,16 +60,6 @@ export const MutationNavigator: React.FC<MutationNavigatorProps> = ({
             (r) => r.mutation_ref_pos === mut.reference_position
           );
 
-          // Consequence badge styling
-          let badgeStyle = 'bg-[#17191D] text-[#A0A3AA] border-[#2A2D33]';
-          if (mut.category === 'missense') {
-            badgeStyle = 'bg-[#FF6500]/15 text-[#FF6500] border-[#FF6500]/30';
-          } else if (mut.category === 'synonymous') {
-            badgeStyle = 'bg-[#35C98A]/15 text-[#35C98A] border-[#35C98A]/30';
-          } else if (mut.category === 'nonsense' || mut.category === 'frameshift') {
-            badgeStyle = 'bg-[#F06464]/15 text-[#F06464] border-[#F06464]/30';
-          }
-
           return (
             <div
               key={idx}
@@ -85,7 +75,7 @@ export const MutationNavigator: React.FC<MutationNavigatorProps> = ({
                 <span className="text-xs font-bold text-[#F4F4F2]">
                   Pos {mut.reference_position}: {mut.original_base} &rarr; {mut.observed_base}
                 </span>
-                <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded border ${badgeStyle}`}>
+                <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded border bg-[#17191D] text-[#A0A3AA] border-[#2A2D33]">
                   {mut.category_label}
                 </span>
               </div>
@@ -118,17 +108,9 @@ export const MutationNavigator: React.FC<MutationNavigatorProps> = ({
                   </span>
                 )}
 
-                {mappedRes?.impact_category && (
-                  <span
-                    className={`font-semibold px-1.5 py-0.2 rounded ${
-                      mappedRes.impact_category === 'high'
-                        ? 'text-[#FF6500]'
-                        : mappedRes.impact_category === 'moderate'
-                        ? 'text-[#F3B347]'
-                        : 'text-[#35C98A]'
-                    }`}
-                  >
-                    {mappedRes.impact_category.toUpperCase()} IMPACT
+                {mappedRes?.pdb_residue && mappedRes.pdb_residue !== 'undefined' && (
+                  <span className="text-[#A0A3AA]">
+                    PDB residue: {mappedRes.pdb_residue}
                   </span>
                 )}
               </div>

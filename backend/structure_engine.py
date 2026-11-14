@@ -1,11 +1,36 @@
+"""
+BioCrystal 3D — Structural Bioinformatics & Macromolecular 3D DNA Engine.
+
+Responsible for:
+1. De novo generation of full-atom 3D B-DNA double-helix structures (Chain A + Chain B)
+   for any input sequence using Arnott & Dickerson canonical stereochemistry.
+2. Direct mapping of DNA mutations (substitutions, mismatches) onto 3D nucleic acid coordinates.
+3. Serving cached or generated PDB files to WebGL viewers (3Dmol.js).
+4. Backward-compatible resolution of curated benchmark macromolecular entries.
+"""
+
+from __future__ import annotations
+
+import hashlib
 import os
+import re
 import urllib.request
-from typing import Dict, Any, List, Optional
+from io import StringIO
+from typing import Any, Dict, List, Optional
+
+from Bio.PDB import PDBParser
+from Bio.PDB.PDBExceptions import PDBConstructionException
+from Bio.SeqUtils import seq1
+
+try:
+    from dna_structure_builder import build_b_dna_pdb, clean_dna_sequence
+except ImportError:
+    from backend.dna_structure_builder import build_b_dna_pdb, clean_dna_sequence
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pdb_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Curated benchmark metadata for experimental structures
+# Curated benchmark metadata for experimental structures (legacy reference registry)
 GENE_STRUCTURE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "KRAS": {
         "gene": "KRAS",
@@ -17,26 +42,12 @@ GENE_STRUCTURE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "title": "Crystal structure of KRAS G12C bound to AMG 510 (Sotorasib inhibitor)",
         "method": "X-ray Diffraction",
         "resolution": "1.35 Å",
-        "cds_start_offset": 0,  # 0-indexed offset of coding sequence start
+        "coding_sequence": "ATGACTGAATATAAACTTGTGGTAGTTGGAGCTGGTGGCGTAGGCAAGAGTGCCTTGACG",
+        "cds_start_offset": 0,
         "known_hotspots": {
-            12: {
-                "region": "P-loop (Walker A motif, residues 10-17)",
-                "functional_role": "Interacts with nucleotide alpha- and beta-phosphates; impairs GAP-induced GTP hydrolysis locking KRAS in active oncogenic state.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Oncogenic Activation)",
-            },
-            13: {
-                "region": "P-loop (Walker A motif, residues 10-17)",
-                "functional_role": "Nucleotide phosphate positioning; reduces intrinsic GTP hydrolysis.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Oncogenic Activation)",
-            },
-            61: {
-                "region": "Switch II (residues 59-67)",
-                "functional_role": "Catalytic glutamine required for nucleophilic water attack during GTP cleavage.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Severe Loss of GTP Hydrolysis)",
-            },
+            12: {"region": "P-loop (residues 10-17)"},
+            13: {"region": "P-loop (residues 10-17)"},
+            61: {"region": "Switch II (residues 59-67)"},
         },
     },
     "HBB": {
@@ -49,46 +60,10 @@ GENE_STRUCTURE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "title": "Human Deoxyhemoglobin at 1.8 Å resolution",
         "method": "X-ray Diffraction",
         "resolution": "1.80 Å",
-        "cds_start_offset": 0,
+        "coding_sequence": "ATGGTGCACCTGACTCCTGAGGAGAAGTCT",
+        "cds_start_offset": 1,
         "known_hotspots": {
-            6: {
-                "region": "A-helix outer surface (residue 6)",
-                "functional_role": "Hydrophobic Valine pocket causes abnormal intermolecular aggregation under deoxygenated conditions, causing sickle cell fiber formation.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Polymerization & Hemoglobinopathy)",
-            },
-        },
-    },
-    "TP53": {
-        "gene": "TP53",
-        "organism": "Homo sapiens",
-        "accession": "NM_000546.6",
-        "uniprot": "P04637",
-        "pdb_id": "1TUP",
-        "chain": "B",
-        "title": "Crystal structure of p53 tumor suppressor core domain bound to DNA",
-        "method": "X-ray Diffraction",
-        "resolution": "2.20 Å",
-        "cds_start_offset": 0,
-        "known_hotspots": {
-            175: {
-                "region": "L2 loop zinc-coordinating domain",
-                "functional_role": "Structural scaffold mutation destabilizing zinc coordination and tertiary architecture of the DNA-binding domain.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Structural Inactivation of Tumor Suppressor)",
-            },
-            248: {
-                "region": "L3 loop minor groove DNA contact",
-                "functional_role": "Direct DNA contact residue; abolishes sequence-specific binding to tumor suppressor promoters.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Direct DNA Contact Loss)",
-            },
-            273: {
-                "region": "Loop-sheet-helix major groove DNA contact",
-                "functional_role": "Direct DNA contact residue; completely impairs transcriptional transactivation.",
-                "default_impact": "high",
-                "impact_label": "Potentially high impact (Direct DNA Contact Loss)",
-            },
+            6: {"region": "A-helix"},
         },
     },
 }
@@ -97,11 +72,13 @@ GENE_STRUCTURE_REGISTRY: Dict[str, Dict[str, Any]] = {
 def fetch_pdb_file(pdb_id: str) -> Optional[str]:
     """
     Retrieves PDB file content from local cache or directly from RCSB PDB.
+    Supports generated DNA structures (DNA_*) as well as 4-character RCSB entries.
     """
-    clean_id = pdb_id.strip().upper()
-    if len(clean_id) != 4 or not clean_id.isalnum():
+    clean_id = (pdb_id or "").strip()
+    if not clean_id:
         return None
 
+    # Check local cache first (handles DNA_* and cached experimental PDBs)
     cache_path = os.path.join(CACHE_DIR, f"{clean_id}.pdb")
     if os.path.exists(cache_path):
         try:
@@ -110,45 +87,153 @@ def fetch_pdb_file(pdb_id: str) -> Optional[str]:
         except Exception:
             pass
 
-    # Attempt fetch from RCSB
-    url = f"https://files.rcsb.org/download/{clean_id}.pdb"
+    # Upper case for standard PDB IDs
+    upper_id = clean_id.upper()
+    cache_path_upper = os.path.join(CACHE_DIR, f"{upper_id}.pdb")
+    if os.path.exists(cache_path_upper):
+        try:
+            with open(cache_path_upper, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except Exception:
+            pass
+
+    # If it is a 4-character alphanumeric RCSB identifier, attempt fetch from RCSB
+    if len(upper_id) == 4 and upper_id.isalnum():
+        url = f"https://files.rcsb.org/download/{upper_id}.pdb"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "BioCrystal3D/3.0"})
+            with urllib.request.urlopen(req, timeout=8) as response:
+                content = response.read().decode("utf-8", errors="replace")
+                with open(cache_path_upper, "w", encoding="utf-8") as f:
+                    f.write(content)
+                return content
+        except Exception as e:
+            print(f"Failed to fetch PDB {upper_id}: {e}")
+            return None
+
+    return None
+
+
+def generate_dna_structure_mapping(
+    sequence: str,
+    mutations: Optional[List[Dict[str, Any]]] = None,
+    gene: Optional[str] = "DNA",
+    organism: Optional[str] = None,
+    accession: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Generates an idealized canonical full-atom B-DNA model for the input sequence,
+    maps all mutations onto the DNA duplex coordinates, caches the PDB file, and returns
+    the structure mapping result for the 3D visualization workstation.
+    """
+    clean_seq = clean_dna_sequence(sequence)
+    if not clean_seq:
+        clean_seq = "ATGC"
+
+    # Include the full alignment event so distinct indels cannot share stale cached metadata.
+    mut_sig = "_".join(
+        ":".join(str(m.get(key) or "") for key in (
+            "type",
+            "mutation_type",
+            "reference_position",
+            "reference_end_position",
+            "observed_position",
+            "reference_bases",
+            "original_base",
+            "observed_bases",
+            "observed_base",
+        ))
+        for m in (mutations or [])
+    )
+    raw_hash = hashlib.md5(f"{clean_seq}_{mut_sig}".encode()).hexdigest()[:8].upper()
+    gene_slug = re.sub(r"[^A-Za-z0-9]+", "", (gene or "DNA").upper())[:6] or "DNA"
+    pdb_id = f"DNA_{gene_slug}_{raw_hash}"
+
+    # Build the idealized canonical B-DNA coordinate model.
+    pdb_text, mapped_residues, metrics = build_b_dna_pdb(
+        sequence=clean_seq,
+        mutations=mutations,
+        title=f"BioCrystal 3D B-DNA - {gene_slug} ({len(clean_seq)} bp)",
+    )
+
+    # Save to cache so GET /api/pdb/{pdb_id} can serve it immediately
+    cache_path = os.path.join(CACHE_DIR, f"{pdb_id}.pdb")
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "BioCrystal3D/3.0"})
-        with urllib.request.urlopen(req, timeout=8) as response:
-            content = response.read().decode("utf-8", errors="replace")
-            # Cache to disk
-            with open(cache_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return content
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.write(pdb_text)
     except Exception as e:
-        print(f"Failed to fetch PDB {clean_id}: {e}")
-        return None
+        print(f"Notice: could not write {cache_path}: {e}")
+
+    return {
+        "mapped": True,
+        "structure_type": "idealized_dna_duplex",
+        "pdb_id": pdb_id,
+        "chain": "A",
+        "status": f"Computed idealized canonical B-DNA model ({len(clean_seq)} bp)",
+        "reason": None,
+        "mappings": mapped_residues,
+        "metrics": metrics,
+        "pdb_data": pdb_text,
+        "provenance": {
+            "database": "BioCrystal 3D Idealized B-DNA Builder",
+            "pdb_id": pdb_id,
+            "organism": organism or "In silico DNA model",
+            "accession": accession or "Not applicable (generated model)",
+            "title": f"Idealized Canonical B-DNA Model ({len(clean_seq)} bp)",
+            "method": "Idealized canonical B-DNA coordinate builder",
+            "resolution": "Not applicable (computed idealized model)",
+            "chain": "A",
+            "experimental_status": "Computed coordinates; not experimental",
+            "model_type": "Idealized canonical antiparallel B-DNA duplex (Chains A + B)",
+            "disclaimer": (
+                "Generated idealized canonical B-DNA coordinates with Watson-Crick complementarity. "
+                "This is not an experimental structure and does not model variant-specific folding or effects."
+            ),
+        },
+    }
 
 
 def map_mutations_to_structure(
     gene: Optional[str],
     pdb_id: Optional[str],
     mutations: List[Dict[str, Any]],
+    reference_sequence: Optional[str] = None,
     is_coding: bool = True,
-    reading_frame: int = 0
+    reading_frame: int = 0,
+    force_dna_mode: bool = False,
 ) -> Dict[str, Any]:
     """
-    Maps detected DNA mutation events to exact 3D protein residues and structural regions.
-    Guarantees honest biological provenance and explicit unavailable states.
+    Structural mapping entry point.
+
+    - By default, if force_dna_mode is True or if pdb_id is not a curated protein benchmark,
+      it generates an idealized canonical B-DNA model for the submitted DNA sequence.
+    - If a curated protein benchmark PDB (6OIM, 1A3N) is explicitly requested with is_coding=True,
+      it resolves the protein coordinates for backward compatibility.
     """
-    # 1. Non-coding or insufficient biological context
+    clean_reference = clean_dna_sequence(reference_sequence or "")
+
+    # If explicit DNA mode or a DNA structure identifier is requested, generate an idealized B-DNA model.
+    if force_dna_mode or (pdb_id and pdb_id.startswith("DNA_")):
+        return generate_dna_structure_mapping(
+            sequence=clean_reference,
+            mutations=mutations,
+            gene=gene or "DNA",
+            organism="Homo sapiens",
+        )
+
+    # 1. Non-coding: never fabricate or infer a protein structure
     if not is_coding:
         return {
             "mapped": False,
             "pdb_id": None,
             "chain": None,
             "status": "Structural mapping unavailable",
-            "reason": "Non-coding DNA sequences do not translate into physical protein structures. Sequence-level alignment and variant categorization are provided below.",
+            "reason": "Molecular structure unavailable for this sequence. Non-coding DNA sequences do not translate into physical protein structures. Sequence-level alignment and variant categorization are provided below.",
             "mappings": [],
             "provenance": None,
         }
 
-    # 2. Determine target gene configuration
+    # 2. Determine curated reference/structure pair
     gene_key = (gene or "").strip().upper()
     target_config = None
 
@@ -161,82 +246,104 @@ def map_mutations_to_structure(
                 target_config = conf
                 break
 
-    # If user provided a specific custom PDB ID not in registry
-    if not target_config and pdb_id and len(pdb_id.strip()) == 4:
-        clean_pdb = pdb_id.strip().upper()
-        # Verify structure exists
-        pdb_content = fetch_pdb_file(clean_pdb)
-        if pdb_content:
-            target_config = {
-                "gene": gene or clean_pdb,
-                "organism": "Specified by Accession",
-                "accession": clean_pdb,
-                "uniprot": "N/A",
-                "pdb_id": clean_pdb,
-                "chain": "A",
-                "title": f"RCSB PDB Structure {clean_pdb}",
-                "method": "Experimental (PDB)",
-                "resolution": "Experimental",
-                "cds_start_offset": 0,
-                "known_hotspots": {},
+    if target_config:
+        supplied_pdb = (pdb_id or "").strip().upper()
+        if len(supplied_pdb) == 4 and supplied_pdb != target_config["pdb_id"]:
+            return {
+                "mapped": False,
+                "pdb_id": None,
+                "chain": None,
+                "status": "Structural mapping unavailable",
+                "reason": "Molecular structure unavailable for this sequence. The supplied PDB identifier does not match the curated structure for this gene.",
+                "mappings": [],
+                "provenance": None,
             }
 
-    if not target_config:
+        # Verify that the submitted sequence exactly matches the curated coding sequence for this structure
+        if clean_reference != target_config["coding_sequence"]:
+            return {
+                "mapped": False,
+                "pdb_id": None,
+                "chain": None,
+                "status": "Structural mapping unavailable",
+                "reason": "Molecular structure unavailable for this sequence. The supplied reference does not exactly match the curated coding sequence used for this PDB residue mapping. No residue coordinates were inferred.",
+                "mappings": [],
+                "provenance": None,
+            }
+    else:
+        # Not in curated registry: check sequence length for informative scientific explanation
+        if len(clean_reference) < 30:
+            stop_codons = {"TAA", "TAG", "TGA"}
+            total_codons = len(clean_reference) // 3
+            aa_count = total_codons
+            for c_i in range(total_codons):
+                if clean_reference[c_i * 3 : c_i * 3 + 3] in stop_codons:
+                    aa_count = c_i
+                    break
+
+            return {
+                "mapped": False,
+                "pdb_id": None,
+                "chain": None,
+                "status": "Structural mapping unavailable",
+                "reason": f"Molecular structure unavailable for this sequence. The submitted sequence ({len(clean_reference)} bp) encodes only {aa_count} amino acids before its stop codon. No experimentally verified macromolecular structure exists in the Protein Data Bank.",
+                "mappings": [],
+                "provenance": None,
+            }
         return {
             "mapped": False,
             "pdb_id": None,
             "chain": None,
             "status": "Structural mapping unavailable",
-            "reason": "No validated experimental 3D crystal structure could be identified for this genomic region. Computational sequence alignment and consequence analysis remain fully available.",
+            "reason": "Molecular structure unavailable for this sequence. No curated coding-sequence-to-PDB mapping is available for this gene and structure. Sequence comparison remains available.",
             "mappings": [],
             "provenance": None,
         }
 
-    # Ensure PDB content is cached
-    fetch_pdb_file(target_config["pdb_id"])
+    pdb_content = fetch_pdb_file(target_config["pdb_id"])
+    if not pdb_content:
+        return {
+            "mapped": False,
+            "pdb_id": target_config["pdb_id"],
+            "chain": target_config["chain"],
+            "status": "Structural mapping unavailable",
+            "reason": f"PDB structure {target_config['pdb_id']} could not be retrieved.",
+            "mappings": [],
+            "provenance": None,
+        }
 
-    # Map each detected mutation to protein residue coordinates
+    try:
+        structure = PDBParser(QUIET=True).get_structure(
+            target_config["pdb_id"], StringIO(pdb_content)
+        )
+        chain = structure[0][target_config["chain"]]
+    except (IndexError, KeyError, ValueError, PDBConstructionException) as exc:
+        return {
+            "mapped": False,
+            "pdb_id": target_config["pdb_id"],
+            "chain": target_config["chain"],
+            "status": "Structural mapping unavailable",
+            "reason": f"The configured PDB chain could not be parsed: {exc}",
+            "mappings": [],
+            "provenance": None,
+        }
+
     mappings = []
     has_any_mapped = False
 
     for mut in mutations:
         if mut.get("type") == "substitution":
             ref_pos = mut.get("reference_position", 1)
-            # 1-based codon index in coding sequence
             codon_idx = (ref_pos - 1 - reading_frame) // 3 + 1
             residue_num = codon_idx - target_config["cds_start_offset"]
 
             orig_aa = mut.get("original_amino_acid", {}).get("code3", "Unk")
             mut_aa = mut.get("observed_amino_acid", {}).get("code3", "Unk")
-            category = mut.get("category", "missense")
-
             hotspot_info = target_config["known_hotspots"].get(residue_num, {})
-            region = hotspot_info.get("region", f"Residue {residue_num} Structural Core")
-
-            # Determine biological impact categorization
-            if category == "synonymous":
-                impact_cat = "low"
-                impact_label = "Potentially low impact (Silent Variation)"
-                impact_rationale = f"Synonymous substitution at codon {codon_idx} preserves translated {orig_aa} residue. No direct structural displacement expected."
-            elif category == "nonsense":
-                impact_cat = "high"
-                impact_label = "Potentially high impact (Premature Termination)"
-                impact_rationale = f"Premature stop codon at residue {residue_num} results in truncated polypeptide lacking critical downstream tertiary domain."
-            elif hotspot_info:
-                impact_cat = hotspot_info.get("default_impact", "high")
-                impact_label = hotspot_info.get("impact_label", "Potentially high impact")
-                impact_rationale = hotspot_info.get("functional_role", f"Affects functional residue {residue_num}.")
-            else:
-                orig_cat = mut.get("original_amino_acid", {}).get("category", "")
-                mut_cat = mut.get("observed_amino_acid", {}).get("category", "")
-                if orig_cat != mut_cat:
-                    impact_cat = "moderate"
-                    impact_label = "Potentially moderate impact (Non-conservative substitution)"
-                    impact_rationale = f"Chemical property shift from {orig_cat} ({orig_aa}) to {mut_cat} ({mut_aa}) at residue {residue_num} may affect local sidechain packing or electrostatic interactions."
-                else:
-                    impact_cat = "low"
-                    impact_label = "Potentially low impact (Conservative substitution)"
-                    impact_rationale = f"Conservative substitution maintaining {orig_cat} sidechain characteristics at residue {residue_num}."
+            if residue_num not in chain:
+                continue
+            pdb_residue = seq1(chain[residue_num].resname)
+            region = hotspot_info.get("region", "No curated region annotation")
 
             mappings.append({
                 "mutation_ref_pos": ref_pos,
@@ -246,46 +353,39 @@ def map_mutations_to_structure(
                 "residue_number": residue_num,
                 "original_residue": orig_aa,
                 "mutated_residue": mut_aa,
+                "pdb_residue": pdb_residue,
+                "pdb_matches_observed_residue": pdb_residue == mut.get("observed_amino_acid", {}).get("code1"),
                 "structural_region": region,
-                "mapping_confidence": "High (Direct Sequence-to-Structure Alignment)",
+                "mapping_confidence": "Curated reference coordinate; PDB residue verified",
                 "is_mapped": True,
-                "impact_category": impact_cat,
-                "impact_label": impact_label,
-                "impact_rationale": impact_rationale,
-                "limitation": "In-silico structural localization on wild-type reference crystal structure. Secondary altered conformation is not experimentally determined without wet-lab crystallographic or cryo-EM analysis.",
+                "limitation": "The displayed experimental coordinates are from this entry. Sequence differences outside curated codons are not modeled.",
             })
             has_any_mapped = True
-        else:
-            # Indels
-            ref_pos = mut.get("reference_position", 1)
-            codon_idx = (ref_pos - 1 - reading_frame) // 3 + 1
-            residue_num = codon_idx - target_config["cds_start_offset"]
-            is_frameshift = mut.get("category") == "frameshift"
 
-            mappings.append({
-                "mutation_ref_pos": ref_pos,
-                "mutation_type": mut.get("type"),
-                "dna_variant": f"Indel at {ref_pos}",
-                "chain": target_config["chain"],
-                "residue_number": residue_num,
-                "original_residue": "Indel",
-                "mutated_residue": "Shifted",
-                "structural_region": f"Disruption starting at residue {residue_num}",
-                "mapping_confidence": "Moderate (Indel Boundary Mapping)",
-                "is_mapped": True,
-                "impact_category": "high" if is_frameshift else "moderate",
-                "impact_label": "Potentially high impact (Frameshift Disruption)" if is_frameshift else "Potentially moderate impact (In-frame Indel)",
-                "impact_rationale": "Disrupts downstream reading frame and native protein fold." if is_frameshift else f"Inserts or deletes residues around position {residue_num} without altering downstream frame.",
-                "limitation": "Indels cause extensive conformational shifts that cannot be reliably inferred from a static reference structure alone.",
-            })
-            has_any_mapped = True
+    # If any frameshift mutation disrupts the protein reading frame:
+    has_frameshift = any(
+        m.get("category") == "frameshift" or m.get("mutation_type") == "frameshift"
+        for m in mutations
+    )
+    if has_frameshift:
+        return {
+            "mapped": False,
+            "pdb_id": target_config["pdb_id"],
+            "chain": target_config["chain"],
+            "status": "Structural mapping unmapped",
+            "reason": "Molecular structure unmapped: frameshift mutation alters reading frame and disrupts native protein fold. Static reference PDB structure cannot model frameshifted conformation.",
+            "mappings": [],
+            "provenance": None,
+        }
+
+    is_mapped_status = True if (len(mutations) == 0 or has_any_mapped) else False
 
     return {
-        "mapped": has_any_mapped,
+        "mapped": is_mapped_status,
         "pdb_id": target_config["pdb_id"],
         "chain": target_config["chain"],
-        "status": "Reference structure with mutation position highlighted",
-        "reason": None if has_any_mapped else "No mutations mapped to target structure.",
+        "status": "Wildtype reference PDB structure (0 mutations)" if len(mutations) == 0 else "Experimental PDB coordinates with verified residue locations",
+        "reason": None if is_mapped_status else "No substitution could be localized in the configured PDB chain; indels are not mapped to static residue coordinates.",
         "mappings": mappings,
         "provenance": {
             "database": "RCSB Protein Data Bank",
@@ -295,10 +395,8 @@ def map_mutations_to_structure(
             "method": target_config["method"],
             "resolution": target_config["resolution"],
             "chain": target_config["chain"],
-            "experimental_status": "Experimentally Determined (X-ray / Cryo-EM)",
-            "model_type": "Wild-type Reference Coordinate System",
-            "mutant_structure_available": False,
-            "disclaimer": "The 3D visualization presents the experimental reference crystal structure with detected mutation sites localized in 3D space. Mutant conformation is not fabricated; computational assessment is provided with structural context.",
+            "experimental_status": "Reference-derived structure with mutated positions highlighted",
+            "model_type": "Reference-derived structure with mutated positions highlighted",
+            "disclaimer": "Reference-derived structure with mutated positions highlighted. The displayed coordinates are from this experimental PDB entry and are not generated de novo from this analysis.",
         },
     }
-

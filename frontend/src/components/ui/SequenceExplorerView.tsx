@@ -23,18 +23,20 @@ interface SequenceExplorerViewProps {
 
 export const SequenceExplorerView: React.FC<SequenceExplorerViewProps> = ({
   sequence,
+  validation,
   mutatedPositions,
   onSelectPosition,
 }) => {
   const [readingFrame, setReadingFrame] = useState<0 | 1 | 2>(0);
   const [geneticCode, setGeneticCode] = useState<GeneticCodeTable>('standard');
+  const [selectedPosition, setSelectedPosition] = useState<number | null>(null);
 
   const complementarySeq = generateComplementaryStrand(sequence);
   const mrnaSeq = transcribeToMRNA(sequence);
-  const codons = extractCodons(sequence, readingFrame, mutatedPositions);
+  const codons = extractCodons(sequence, readingFrame, mutatedPositions, geneticCode);
 
   return (
-    <div className="h-full flex flex-col bg-[#080808] overflow-y-auto p-6 max-w-6xl mx-auto space-y-5 select-none">
+    <div className="bc-sequence-explorer flex flex-col p-6 space-y-5">
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between pb-3 border-b border-[#292929] gap-4">
         <div>
@@ -49,12 +51,14 @@ export const SequenceExplorerView: React.FC<SequenceExplorerViewProps> = ({
 
         {/* Frame & Code Table Selectors */}
         <div className="flex items-center space-x-3 text-xs font-mono">
-          <div className="flex items-center space-x-1 bg-[#101010] p-0.5 rounded border border-[#292929]">
+          <div className="flex items-center space-x-1 bg-[#101010] p-0.5 rounded border border-[#292929]" role="group" aria-label="Reading frame">
             <span className="text-[10px] text-[#686868] px-2 font-medium">Frame:</span>
             {([0, 1, 2] as (0 | 1 | 2)[]).map((f) => (
               <button
+                type="button"
                 key={f}
                 onClick={() => setReadingFrame(f)}
+                aria-pressed={readingFrame === f}
                 className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
                   readingFrame === f
                     ? 'bg-[#1c1c1c] text-[#f5f5f5] border border-[#383838]'
@@ -67,8 +71,9 @@ export const SequenceExplorerView: React.FC<SequenceExplorerViewProps> = ({
           </div>
 
           <div className="flex items-center bg-[#101010] px-2.5 py-1 rounded border border-[#292929] text-[#a3a3a3]">
-            <span className="text-[10px] text-[#686868] mr-2">Code:</span>
+            <label htmlFor="sequence-explorer-genetic-code" className="text-[10px] text-[#686868] mr-2">Code:</label>
             <select
+              id="sequence-explorer-genetic-code"
               value={geneticCode}
               onChange={(e) => setGeneticCode(e.target.value as GeneticCodeTable)}
               className="bg-transparent text-[#f5f5f5] text-xs focus:outline-none cursor-pointer font-mono"
@@ -80,6 +85,13 @@ export const SequenceExplorerView: React.FC<SequenceExplorerViewProps> = ({
           </div>
         </div>
       </div>
+
+      {!validation.isValid && (
+        <div className="bc-explorer-validation" role="alert">
+          <strong>Sequence validation needs attention.</strong>
+          <span>{validation.errors.join(' ')}</span>
+        </div>
+      )}
 
       {/* Transcription & Nucleic Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
@@ -143,15 +155,23 @@ export const SequenceExplorerView: React.FC<SequenceExplorerViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
             {codons.map((codon) => {
               const aa = codon.aminoAcid;
+              const isSelected = selectedPosition === codon.startPosition;
               return (
-                <div
+                <button
                   key={`codon_${codon.index}`}
-                  onClick={() => onSelectPosition(codon.startPosition)}
-                  className={`bg-[#101010] border rounded p-3 space-y-2 cursor-pointer transition-all hover:border-[#383838] ${
+                  type="button"
+                  disabled={!validation.isValid}
+                  aria-pressed={isSelected}
+                  aria-label={`Codon ${codon.index}, positions ${codon.startPosition} to ${codon.endPosition}: ${codon.sequence}, ${aa.name}${codon.isMutated ? ', contains a sequence difference' : ''}`}
+                  onClick={() => {
+                    setSelectedPosition(codon.startPosition);
+                    onSelectPosition(codon.startPosition);
+                  }}
+                  className={`bc-explorer-codon bg-[#101010] border rounded p-3 space-y-2 cursor-pointer transition-all hover:border-[#383838] ${
                     codon.isMutated
                       ? 'border-[#f4b942]/60 shadow-sm'
                       : 'border-[#292929]'
-                  }`}
+                  } ${isSelected ? 'is-selected' : ''}`}
                 >
                   <div className="flex items-center justify-between font-mono">
                     <span className="text-[10px] text-[#a3a3a3] font-semibold">
@@ -198,7 +218,7 @@ export const SequenceExplorerView: React.FC<SequenceExplorerViewProps> = ({
                       </span>
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>

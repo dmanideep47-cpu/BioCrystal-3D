@@ -3,6 +3,9 @@ import {
   FullAnalysisResult,
   StructureMappingResult,
   BackendHealthResponse,
+  MutationExperimentResult,
+  PropertyObjective,
+  PropertyAnalysisResponse,
 } from '../types/dna';
 
 /**
@@ -203,6 +206,90 @@ export async function exportPdfAPI(data: any): Promise<Blob> {
     }
 
     return response.blob();
+  } catch (err: any) {
+    throw new Error(formatApiError(err));
+  }
+}
+
+/**
+ * Runs educational / workflow mutation experiment analysis.
+ */
+export async function analyzeMutationExperimentAPI(params: {
+  reference_sequence: string;
+  variant_sequence: string;
+  prediction?: string;
+  reading_frame?: number;
+  table_id?: number;
+}): Promise<MutationExperimentResult> {
+  const url = `${getApiBase()}/api/experiment/analyze`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const detail =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : Array.isArray(errorData.detail)
+          ? errorData.detail.map((e: any) => `${e.loc?.slice(-1)[0] || 'field'}: ${e.msg}`).join(', ')
+          : `Experiment analysis failed with HTTP ${response.status}`;
+      throw new Error(detail);
+    }
+
+    return response.json();
+  } catch (err: any) {
+    throw new Error(formatApiError(err));
+  }
+}
+
+/**
+ * Fetches the supported property objectives list from backend.
+ */
+export async function fetchPropertyObjectivesAPI(): Promise<{ objectives: PropertyObjective[] }> {
+  const url = `${getApiBase()}/api/property-objectives`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to load property objectives (HTTP ${response.status})`);
+    }
+    return response.json();
+  } catch (err: any) {
+    throw new Error(formatApiError(err));
+  }
+}
+
+/**
+ * Runs evidence-aware reference-vs-variant property analysis.
+ */
+export async function analyzePropertyAPI(params: {
+  reference_sequence: string;
+  variant_sequence: string;
+  objective_id?: string;
+  reading_frame?: number;
+  table_id?: number;
+}): Promise<PropertyAnalysisResponse> {
+  const url = `${getApiBase()}/api/property-analysis`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const detail =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : `Property analysis failed with HTTP ${response.status}`;
+      throw new Error(detail);
+    }
+
+    return response.json();
   } catch (err: any) {
     throw new Error(formatApiError(err));
   }

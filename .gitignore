@@ -51,4 +51,6 @@ Desktop.ini
 # System & AI cache
 .gemini/
 .claude/
+backend/pdb_cache/DNA_*.pdb
+
 

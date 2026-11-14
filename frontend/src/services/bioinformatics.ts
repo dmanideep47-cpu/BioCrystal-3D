@@ -87,21 +87,120 @@ export const STANDARD_GENETIC_CODE: Record<string, string> = {
   GGT: 'G', GGC: 'G', GGA: 'G', GGG: 'G',
 };
 
+const VERTEBRATE_MITOCHONDRIAL_OVERRIDES: Record<string, string> = {
+  ATA: 'M',
+  TGA: 'W',
+  AGA: '*',
+  AGG: '*',
+};
+
+const START_CODONS: Record<GeneticCodeTable, ReadonlySet<string>> = {
+  standard: new Set(['ATG']),
+  vertebrate_mitochondrial: new Set(['ATT', 'ATC', 'ATA', 'ATG', 'GTG']),
+  bacterial_plastid: new Set(['TTG', 'CTG', 'ATT', 'ATC', 'ATA', 'ATG', 'GTG']),
+};
+
 // Reference Sequences Catalog with authentic NCBI RefSeq and PDB identifiers
+export interface EducationalMutationScenario {
+  id: string;
+  name: string;
+  operationLabel: string;
+  position: number;
+  description: string;
+  variantSequence: string;
+  expectedOutcome: 'no_change' | 'one_aa_change' | 'early_stop' | 'frameshift' | 'inframe_indel';
+}
+
+export const EDUCATIONAL_CANONICAL_FIXTURE = {
+  id: 'educational-mutation-lab',
+  name: 'Synthetic Coding Benchmark (MAEFPK*)',
+  organism: 'Synthetic Educational Model',
+  geneSymbol: 'EDU-MAEFPK',
+  accessionNumber: 'NCBI:SYN-EDU-21BP',
+  database: 'Educational Demonstration',
+  sequence: 'ATGGCTGAATTTCCGAAATAA',
+  description: 'Synthetic educational coding sequence — not a clinical sample. 21 bp coding strand translating to Met-Ala-Glu-Phe-Pro-Lys-Stop (MAEFPK*).',
+  expectedTranslation: 'MAEFPK*',
+  codons: ['ATG', 'GCT', 'GAA', 'TTT', 'CCG', 'AAA', 'TAA'],
+};
+
+export const EDUCATIONAL_MUTATION_SCENARIOS: EducationalMutationScenario[] = [
+  {
+    id: 'exp_a',
+    name: 'Experiment A: Change base 6 from T to C',
+    operationLabel: 'Substitute base 6: T → C',
+    position: 6,
+    description: 'Substitutes nucleotide T with C at position 6 in the coding sequence.',
+    variantSequence: 'ATGGCCGAATTTCCGAAATAA',
+    expectedOutcome: 'no_change',
+  },
+  {
+    id: 'exp_b',
+    name: 'Experiment B: Change base 5 from C to A',
+    operationLabel: 'Substitute base 5: C → A',
+    position: 5,
+    description: 'Substitutes nucleotide C with A at position 5 in the coding sequence.',
+    variantSequence: 'ATGGATGAATTTCCGAAATAA',
+    expectedOutcome: 'one_aa_change',
+  },
+  {
+    id: 'exp_c',
+    name: 'Experiment C: Change base 7 from G to T',
+    operationLabel: 'Substitute base 7: G → T',
+    position: 7,
+    description: 'Substitutes nucleotide G with T at position 7 in the coding sequence.',
+    variantSequence: 'ATGGCTTAATTTCCGAAATAA',
+    expectedOutcome: 'early_stop',
+  },
+  {
+    id: 'exp_d',
+    name: 'Experiment D: Delete base 4',
+    operationLabel: 'Delete base 4: G',
+    position: 4,
+    description: 'Deletes a single nucleotide (G) at position 4 in the coding sequence.',
+    variantSequence: 'ATGCTGAATTTCCGAAATAA',
+    expectedOutcome: 'frameshift',
+  },
+  {
+    id: 'exp_e',
+    name: 'Experiment E: Delete bases 4–6',
+    operationLabel: 'Delete bases 4–6: GCT',
+    position: 4,
+    description: 'Deletes three consecutive nucleotides (GCT) at positions 4 to 6 in the coding sequence.',
+    variantSequence: 'ATGGAATTTCCGAAATAA',
+    expectedOutcome: 'inframe_indel',
+  },
+];
+
 export const REFERENCE_SEQUENCES: ReferenceSequence[] = [
   {
+    id: 'educational-mutation-lab',
+    name: 'Synthetic Coding Benchmark (MAEFPK*)',
+    organism: 'Synthetic Educational Model',
+    geneSymbol: 'EDU-MAEFPK',
+    accessionNumber: 'NCBI:SYN-EDU-21BP',
+    database: 'Educational Demonstration',
+    sequence: 'ATGGCTGAATTTCCGAAATAA',
+    description: 'Synthetic educational coding sequence — not a clinical sample. 21 bp coding strand translating to Met-Ala-Glu-Phe-Pro-Lys-Stop (MAEFPK*).',
+    demonstrationMutation: {
+      position: 6,
+      newBase: 'C',
+      rationale: 'Substitutes nucleotide T with C at position 6 (Experiment A benchmark).',
+    },
+  },
+  {
     id: 'human-kras-g12c',
-    name: 'Human KRAS GTPase (G12C Oncogenic Target - AMG 510 Benchmark)',
+    name: 'Human KRAS coding-sequence fragment',
     organism: 'Homo sapiens',
     geneSymbol: 'KRAS',
     accessionNumber: 'NCBI RefSeq: NM_004985.5',
     database: 'NCBI RefSeq',
     sequence: 'ATGACTGAATATAAACTTGTGGTAGTTGGAGCTGGTGGCGTAGGCAAGAGTGCCTTGACG',
-    description: 'Exon 2 of human KRAS proto-oncogene encoding the P-loop (residues 10-17). The c.34G>T transversion alters codon 12 from GGT (Gly) to TGT (Cys), creating the nucleophilic pocket targeted by covalent inhibitor AMG 510 (Sotorasib, PDB: 6OIM).',
+    description: '60-bp human KRAS coding-sequence prefix used as a named comparison reference. PDB 6OIM contains a cysteine at residue 12; structure coordinates are shown only when the selected reference matches this curated sequence.',
     demonstrationMutation: {
       position: 34,
       newBase: 'T',
-      rationale: 'Substitutes G -> T at position 34 (GGT -> TGT, Gly12Cys), locking KRAS in a persistent active GTP-bound state driving oncogenic signaling.',
+      rationale: 'Educational sequence edit at reference position 34 (GGT -> TGT). This sequence comparison does not establish biological or clinical significance.',
     },
     pdbId: '6OIM',
   },
@@ -122,17 +221,17 @@ export const REFERENCE_SEQUENCES: ReferenceSequence[] = [
   },
   {
     id: 'human-hbb-sickle',
-    name: 'Human HBB Beta-Globin (Sickle Cell Hotspot)',
+    name: 'Human HBB coding-sequence fragment',
     organism: 'Homo sapiens',
     geneSymbol: 'HBB',
     accessionNumber: 'NCBI RefSeq: NM_000518.5',
     database: 'NCBI RefSeq',
     sequence: 'ATGGTGCACCTGACTCCTGAGGAGAAGTCT',
-    description: 'Human hemoglobin beta chain (exonic coding region beginning at codon 1). The 6th codon (GAG, glutamic acid) undergoes a substitution to GTG (valine), leading to sickle cell hemoglobin (HbS).',
+    description: '30-bp human HBB coding-sequence prefix used as a named comparison reference. It is a sequence fragment, not a complete transcript or clinical interpretation.',
     demonstrationMutation: {
       position: 20,
       newBase: 'T',
-      rationale: 'Substitutes A -> T at pos 20 (GAG -> GTG), converting acidic Glutamate (Glu6) to hydrophobic Valine (Val6), the molecular basis of sickle cell anemia.',
+      rationale: 'Educational sequence edit at reference position 20 (GAG -> GTG). This sequence comparison does not establish biological or clinical significance.',
     },
     pdbId: '1A3N',
   },
@@ -343,13 +442,18 @@ export function transcribeToMRNA(dnaSequence: string): string {
  */
 export function translateCodon(
   codon: string,
-  _table: GeneticCodeTable = 'standard'
+  table: GeneticCodeTable = 'standard'
 ): AminoAcidInfo {
   const upper = codon.toUpperCase();
   if (upper.length !== 3) {
     return AMINO_ACIDS['?'];
   }
-  const aaCode = STANDARD_GENETIC_CODE[upper] || '?';
+  const aaCode =
+    (table === 'vertebrate_mitochondrial'
+      ? VERTEBRATE_MITOCHONDRIAL_OVERRIDES[upper]
+      : undefined) ||
+    STANDARD_GENETIC_CODE[upper] ||
+    '?';
   return AMINO_ACIDS[aaCode] || AMINO_ACIDS['?'];
 }
 
@@ -359,7 +463,8 @@ export function translateCodon(
 export function extractCodons(
   sequence: string,
   readingFrame: 0 | 1 | 2 = 0,
-  mutatedPositions: Set<number> = new Set()
+  mutatedPositions: Set<number> = new Set(),
+  geneticCode: GeneticCodeTable = 'standard'
 ): CodonInfo[] {
   const codons: CodonInfo[] = [];
   const seqToParse = sequence.substring(readingFrame);
@@ -369,7 +474,7 @@ export function extractCodons(
     const startIdx = readingFrame + i * 3;
     const codonDna = sequence.substring(startIdx, startIdx + 3);
     const mrna = transcribeToMRNA(codonDna);
-    const aa = translateCodon(codonDna);
+    const aa = translateCodon(codonDna, geneticCode);
 
     const pos1 = startIdx + 1;
     const pos2 = startIdx + 2;
@@ -383,8 +488,8 @@ export function extractCodons(
       startPosition: pos1,
       endPosition: pos3,
       aminoAcid: aa,
-      isStartCodon: codonDna === 'ATG',
-      isStopCodon: codonDna === 'TAA' || codonDna === 'TAG' || codonDna === 'TGA',
+      isStartCodon: START_CODONS[geneticCode].has(codonDna),
+      isStopCodon: aa.code1 === '*',
       isMutated: isMut,
     });
   }
@@ -799,5 +904,3 @@ export async function getCorrectionCandidates(
       'Caution: Candidate proposals are computational suggestions. Never apply alterations without experimental validation.',
   };
 }
-
-

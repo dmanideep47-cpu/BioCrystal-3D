@@ -72,8 +72,12 @@ export const StructuralComparisonView: React.FC<StructuralComparisonViewProps> =
               <span className="text-[#2A2D33]">|</span>
               <span className="text-[#70757D]">Chain:</span>
               <span className="text-[#22C7E8]">{primaryMutation.chain}</span>
-              <span className="text-[#2A2D33]">|</span>
-              <span className="text-[#35C98A]">{primaryMutation.impact_label}</span>
+              {primaryMutation.pdb_residue && primaryMutation.pdb_residue !== 'undefined' && (
+                <>
+                  <span className="text-[#2A2D33]">|</span>
+                  <span className="text-[#A0A3AA]">PDB {primaryMutation.pdb_residue}{primaryMutation.residue_number}</span>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -109,12 +113,11 @@ export const StructuralComparisonView: React.FC<StructuralComparisonViewProps> =
       <div className="flex-1 relative overflow-hidden flex">
         {viewMode === 'side-by-side' ? (
           <div className="w-full h-full flex flex-col md:flex-row">
-            {/* LEFT: EXPERIMENTAL REFERENCE CRYSTAL STRUCTURE */}
+            {/* LEFT: EXPERIMENTAL PDB ENTRY */}
             <div className="w-full md:w-1/2 h-full relative border-r border-[#2A2D33] flex flex-col">
               <div className="absolute top-3 left-4 z-10 flex items-center space-x-2 bg-[#111316]/90 px-3 py-1.5 rounded-md border border-[#2A2D33] shadow-md backdrop-blur-md font-mono text-xs">
-                <div className="w-2 h-2 rounded-full bg-[#35C98A]" />
                 <span className="font-semibold text-[#F4F4F2]">
-                  EXPERIMENTAL REFERENCE ({provenance?.pdb_id || 'PDB'})
+                  EXPERIMENTAL PDB ENTRY ({provenance?.pdb_id || 'PDB'})
                 </span>
                 <span className="text-[10px] text-[#70757D]">
                   {provenance?.method} {provenance?.resolution}
@@ -132,12 +135,12 @@ export const StructuralComparisonView: React.FC<StructuralComparisonViewProps> =
               />
             </div>
 
-            {/* RIGHT: MUTANT CONFORMATION HONEST STATUS */}
+            {/* RIGHT: MAPPED SEQUENCE AND STRUCTURE CONTEXT */}
             <div className="w-full md:w-1/2 h-full relative bg-[#090A0C] flex flex-col justify-between p-6 overflow-y-auto">
               <div className="space-y-4">
                 <div className="flex items-center space-x-2 bg-[#111316] px-3.5 py-2 rounded-md border border-[#2A2D33] font-mono text-xs text-[#F4F4F2]">
                   <span className="w-2 h-2 rounded-full bg-[#F3B347] animate-pulse" />
-                  <span className="font-semibold">MUTANT CONFORMATION STATUS</span>
+                  <span className="font-semibold">STRUCTURE CONTEXT</span>
                 </div>
 
                 <div className="bg-[#111316] p-4 rounded-md border border-[#2A2D33] space-y-3 font-mono text-xs">
@@ -146,10 +149,10 @@ export const StructuralComparisonView: React.FC<StructuralComparisonViewProps> =
                     <span>Scientific Accuracy Notice (No Fabricated Coordinates)</span>
                   </div>
                   <p className="text-[11px] text-[#A0A3AA] leading-relaxed">
-                    An experimentally determined crystal structure of this specific altered mutant conformation has not been deposited in the PDB. Under BioCrystal 3D's strict computational biology principles, an artificial or hallucinated 3D structure is <strong>never displayed</strong> in place of real experimental data.
+                    The displayed coordinates come from the experimental PDB entry and are not generated from this analysis. No altered conformation is modelled.
                   </p>
                   <p className="text-[11px] text-[#70757D] leading-relaxed">
-                    The reference crystal structure (left) accurately displays the physical spatial position, secondary structure context, and sidechain geometry of the wild-type residue undergoing mutation.
+                    The deposited residue identity is shown separately from the sequence change; it may differ from the selected reference or observed sequence.
                   </p>
                 </div>
 
@@ -157,18 +160,18 @@ export const StructuralComparisonView: React.FC<StructuralComparisonViewProps> =
                   <div className="bg-[#111316] p-4 rounded-md border border-[#2A2D33] space-y-2.5 font-mono text-xs">
                     <h4 className="font-bold text-[#F4F4F2] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#35C98A]" />
-                      <span>Computational Impact Assessment</span>
+                      <span>Mapped Sequence Change</span>
                     </h4>
 
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
                       <div className="bg-[#090A0C] p-2 rounded border border-[#2A2D33]">
-                        <span className="text-[#70757D] block text-[10px]">Wild-Type Residue</span>
+                        <span className="text-[#70757D] block text-[10px]">Reference Residue</span>
                         <span className="font-bold text-[#35C98A] text-sm">
                           {primaryMutation.original_residue} (Res {primaryMutation.residue_number})
                         </span>
                       </div>
                       <div className="bg-[#090A0C] p-2 rounded border border-[#2A2D33]">
-                        <span className="text-[#70757D] block text-[10px]">Altered Residue</span>
+                        <span className="text-[#70757D] block text-[10px]">Observed Residue</span>
                         <span className="font-bold text-[#FF6500] text-sm">
                           {primaryMutation.mutated_residue} (Res {primaryMutation.residue_number})
                         </span>
@@ -180,12 +183,14 @@ export const StructuralComparisonView: React.FC<StructuralComparisonViewProps> =
                         <span className="text-[#70757D]">Region:</span>
                         <span className="text-[#F4F4F2]">{primaryMutation.structural_region}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#70757D]">Assessment:</span>
-                        <span className="text-[#FF6500] font-semibold">{primaryMutation.impact_label}</span>
-                      </div>
+                      {primaryMutation.pdb_residue && primaryMutation.pdb_residue !== 'undefined' && (
+                        <div className="flex justify-between">
+                          <span className="text-[#70757D]">PDB residue:</span>
+                          <span className="text-[#A0A3AA]">{primaryMutation.pdb_residue}</span>
+                        </div>
+                      )}
                       <div className="pt-1.5 border-t border-[#2A2D33] text-[10px] text-[#A0A3AA] leading-relaxed">
-                        {primaryMutation.impact_rationale}
+                        {primaryMutation.limitation}
                       </div>
                     </div>
                   </div>

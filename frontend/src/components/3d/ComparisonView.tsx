@@ -160,7 +160,6 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
             {/* LEFT: ORIGINAL WILD-TYPE */}
             <div className="w-1/2 h-full relative border-r border-[#2A2D33]">
               <div className="absolute top-3 left-4 z-10 flex items-center space-x-2 bg-[#111316]/90 px-3 py-1.5 rounded-md border border-[#2A2D33] shadow-md backdrop-blur-md">
-                <div className="w-2 h-2 rounded-full bg-[#35C98A]" />
                 <span className="text-xs font-mono font-semibold text-[#F4F4F2]">REFERENCE WILD-TYPE</span>
                 <span className="text-[10px] text-[#70757D] font-mono">({originalSequence.length} bp)</span>
               </div>

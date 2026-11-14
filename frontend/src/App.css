@@ -226,7 +226,6 @@ select:focus-visible {
 .bc-sidebar-label,
 .bc-eyebrow {
   color: #817b70;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: .15em;

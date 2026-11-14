@@ -225,7 +225,7 @@ export const IntelligentMutationAnalysis: React.FC<IntelligentMutationAnalysisPr
           <button
             onClick={handleDownloadPDF}
             className="ima-button ima-button-secondary"
-            title="Download SwissADME-style Scientific PDF Report"
+            title="Download BioCrystal sequence analysis report"
           >
             <Download className="w-4 h-4" /> Export Report (PDF)
           </button>
