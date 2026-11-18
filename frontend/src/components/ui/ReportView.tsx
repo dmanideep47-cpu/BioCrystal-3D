@@ -5,6 +5,7 @@ import {
   SavedExperiment,
   MutationExperimentResult,
   AlignmentMutation,
+  VariantComparisonResult,
 } from '../../types/dna';
 import { exportPdfAPI } from '../../services/apiService';
 import { TacticalButton } from './TacticalButton';
@@ -17,6 +18,8 @@ import {
   Download,
   ExternalLink,
   X,
+  ArrowLeftRight,
+  Database,
 } from 'lucide-react';
 
 interface ReportViewProps {
@@ -42,6 +45,7 @@ interface ReportViewProps {
   onClearNotebook?: () => void;
   onNavigateToAnalyze?: () => void;
   onNavigateToResults?: () => void;
+  variantComparison?: VariantComparisonResult | null;
 }
 
 function referencePositionLabel(mutation: AlignmentMutation): string {
@@ -88,6 +92,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   onClearNotebook,
   onNavigateToAnalyze,
   onNavigateToResults,
+  variantComparison,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -176,6 +181,10 @@ export const ReportView: React.FC<ReportViewProps> = ({
         observed_validation: analysisResult.observed_validation,
         dna_biophysics: analysisResult.dna_biophysics,
         variant_intelligence: analysisResult.variant_intelligence,
+        metadata: analysisResult.metadata,
+        mutation_impact_summary: analysisResult.mutation_impact_summary,
+        fasta_metadata: analysisResult.fasta_metadata,
+        variant_comparison: variantComparison,
       };
 
       const blob = await exportPdfAPI(payload);
@@ -352,6 +361,19 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center space-x-2 flex-wrap">
+          {onNavigateToAnalyze && (
+            <TacticalButton
+              type="button"
+              variant="outline"
+              size="sm"
+              arrow={false}
+              onClick={onNavigateToAnalyze}
+              icon={<Database className="w-3.5 h-3.5 text-[#0F766E]" />}
+              title="Return to sequence input and FASTA analysis workspace"
+            >
+              Analyze
+            </TacticalButton>
+          )}
           {onNavigateToResults && (
             <TacticalButton
               type="button"
@@ -360,9 +382,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
               arrow={false}
               onClick={onNavigateToResults}
               icon={<ArrowLeft className="w-3.5 h-3.5 text-[#0F766E]" />}
-              title="Return to sequence analysis workspace"
+              title="Return to sequence alignment and results"
             >
-              Return to analysis
+              Results &amp; Edit
             </TacticalButton>
           )}
           <TacticalButton
@@ -423,25 +445,167 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
       {/* Main Report Body */}
       <div className="flex-1 overflow-y-auto p-6 max-w-5xl mx-auto w-full space-y-6">
+        {/* Primary Scientific Interpretation Panel */}
+        <section className="bg-[#FFFFFF] border border-[#E5E5E5] rounded-[6px] p-4 text-xs shadow-xs space-y-1.5">
+          <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2">
+            <h2 className="text-xs font-semibold text-[#171717] tracking-wider uppercase font-mono">
+              Primary Scientific Interpretation
+            </h2>
+            {analysisResult?.metadata?.mutation_classification && (
+              <span className="text-[11px] font-mono text-[#0F766E] font-semibold">
+                {analysisResult.metadata.mutation_classification}
+                {analysisResult.metadata.amino_acid_change ? ` (${analysisResult.metadata.amino_acid_change})` : ''}
+              </span>
+            )}
+          </div>
+          <p className="text-[#171717] leading-relaxed pt-1">
+            {analysisResult?.metadata?.primary_interpretation ||
+              (mutations.length === 0
+                ? `Interpretation: No sequence alterations detected. Variant sequence matches wild-type reference across all ${referenceSequence.length} bp. Canonical B-DNA conformation modeled.`
+                : `Interpretation: ${mutations.length} sequence difference(s) detected between reference and variant sequence. Canonical B-DNA conformation modeled.`)}
+          </p>
+        </section>
+
+        {/* Mutation Impact Summary Section */}
+        {analysisResult?.mutation_impact_summary?.items && analysisResult.mutation_impact_summary.items.length > 0 && (
+          <section className="bg-[#FFFFFF] border border-[#E5E5E5] rounded-[8px] p-5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-[#171717] font-mono uppercase tracking-wider">
+                  Mutation Impact Summary
+                </h2>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-[#F0FDFA] text-[#0F766E] font-medium border border-[#CCFBF1]">
+                  {analysisResult.mutation_impact_summary.items.length} Variant{analysisResult.mutation_impact_summary.items.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <span className="text-xs text-[#737373]">
+                Translational &amp; Experimental PDB Profiling
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border border-[#E5E5E5] rounded-[4px]">
+                <thead className="bg-[#FAFAFA] text-[#737373] text-[11px] font-mono border-b border-[#E5E5E5]">
+                  <tr>
+                    <th className="py-2.5 px-3 font-semibold">Notation</th>
+                    <th className="py-2.5 px-3 font-semibold">Codon Pos</th>
+                    <th className="py-2.5 px-3 font-semibold">Codon Change</th>
+                    <th className="py-2.5 px-3 font-semibold">AA Change</th>
+                    <th className="py-2.5 px-3 font-semibold">Consequence</th>
+                    <th className="py-2.5 px-3 font-semibold">Stop</th>
+                    <th className="py-2.5 px-3 font-semibold">Len Change</th>
+                    <th className="py-2.5 px-3 font-semibold">3D Structure</th>
+                    <th className="py-2.5 px-3 font-semibold min-w-[200px]">Interpretation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E5E5E5] text-[#171717]">
+                  {analysisResult.mutation_impact_summary.items.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-[#FAFAFA] transition-colors">
+                      <td className="py-2.5 px-3 font-mono font-semibold text-[#0F766E]">{item.mutation_notation}</td>
+                      <td className="py-2.5 px-3 font-mono">{item.codon_position ? `Codon ${item.codon_position}` : '—'}</td>
+                      <td className="py-2.5 px-3 font-mono">{item.codon_change || '—'}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium">{item.amino_acid_change || '—'}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="inline-block px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium bg-[#FAFAFA] text-[#171717] border border-[#E5E5E5]">
+                          {item.consequence_label || item.consequence}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{item.creates_premature_stop ? 'Yes' : 'No'}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{item.changes_protein_length ? 'Yes' : 'No'}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#0F766E]">
+                        {item.pdb_available && item.pdb_id ? `PDB: ${item.pdb_id}` : 'Canonical B-DNA'}
+                      </td>
+                      <td className="py-2.5 px-3 text-[#171717] text-[11px] leading-relaxed">{item.primary_interpretation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* Dual Variant Comparison Section */}
+        {variantComparison && (
+          <section className="bg-[#FFFFFF] border border-[#E5E5E5] rounded-[8px] p-5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight className="w-4 h-4 text-[#0F766E]" />
+                <h2 className="text-sm font-semibold text-[#171717] font-mono uppercase tracking-wider">
+                  Variant Comparison Mode
+                </h2>
+              </div>
+              <span className="text-xs text-[#737373]">
+                {variantComparison.variant_a.name} vs {variantComparison.variant_b.name}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border border-[#E5E5E5] rounded-[4px]">
+                <thead className="bg-[#FAFAFA] text-[#737373] text-[11px] font-mono border-b border-[#E5E5E5]">
+                  <tr>
+                    <th className="py-2.5 px-3 font-semibold">Variant</th>
+                    <th className="py-2.5 px-3 font-semibold">Notation</th>
+                    <th className="py-2.5 px-3 font-semibold">Codon</th>
+                    <th className="py-2.5 px-3 font-semibold">AA</th>
+                    <th className="py-2.5 px-3 font-semibold">Consequence</th>
+                    <th className="py-2.5 px-3 font-semibold">ΔMW (Da)</th>
+                    <th className="py-2.5 px-3 font-semibold">ΔGRAVY</th>
+                    <th className="py-2.5 px-3 font-semibold">ΔNet Charge</th>
+                    <th className="py-2.5 px-3 font-semibold">ΔTm (°C)</th>
+                    <th className="py-2.5 px-3 font-semibold">PDB</th>
+                    <th className="py-2.5 px-3 font-semibold min-w-[200px]">Primary Interpretation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E5E5E5] text-[#171717]">
+                  {variantComparison.rows.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-[#FAFAFA] transition-colors">
+                      <td className="py-2.5 px-3 font-semibold text-[#171717]">{row.variant_label}</td>
+                      <td className="py-2.5 px-3 font-mono font-semibold text-[#0F766E]">{row.mutation_notation}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{row.codon_change}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium">{row.amino_acid_change}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="inline-block px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium bg-[#FAFAFA] text-[#171717] border border-[#E5E5E5]">
+                          {row.mutation_consequence}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{row.protein_mw_change}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{row.gravy_score_change}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{row.net_charge_change}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{row.melting_temp_change}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#0F766E]">{row.pdb_availability}</td>
+                      <td className="py-2.5 px-3 text-[#171717] text-[11px] leading-relaxed">{row.primary_interpretation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-3 bg-[#F0FDFA] border border-[#CCFBF1] rounded-[6px] text-xs text-[#171717]">
+              <span className="font-semibold text-[#0F766E] block mb-1">Comparison Conclusion:</span>
+              <p className="text-[#171717] leading-relaxed">{variantComparison.conclusion}</p>
+            </div>
+          </section>
+        )}
+
         {/* Section 1: Settings & Translation Assumptions */}
         <section className="bg-[#FFFFFF] border border-[#E5E5E5] rounded-[8px] p-5 space-y-3 shadow-xs">
           <h2 className="text-sm font-semibold text-[#171717] font-mono uppercase tracking-wider border-b border-[#E5E5E5] pb-2">
             1. Settings &amp; Assumptions
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Strand orientation</span>
               <span className="font-semibold text-[#171717]">5′ to 3′ coding strand</span>
             </div>
-            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Reading frame</span>
               <span className="font-semibold text-[#171717]">Frame {readingFrame >= 0 ? readingFrame : 0}</span>
             </div>
-            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Genetic code</span>
               <span className="font-semibold text-[#171717]">NCBI Table 1 (Standard)</span>
             </div>
-            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Gene / Accession</span>
               <span className="font-semibold text-[#171717] font-mono">
                 {gene || 'Benchmark'} {accession ? `(${accession})` : ''}
@@ -461,7 +625,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 <span className="font-semibold text-[#171717]">Reference DNA:</span>
                 <span className="text-[#737373]">{referenceSequence.length} bp</span>
               </div>
-              <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px] font-mono text-xs text-[#171717] break-all select-all">
+              <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px] font-mono text-xs text-[#171717] break-all select-all">
                 {referenceSequence}
               </div>
             </div>
@@ -471,7 +635,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 <span className="font-semibold text-[#171717]">Variant DNA (Analyzed):</span>
                 <span className="text-[#737373]">{lastAnalysedSequence.length} bp</span>
               </div>
-              <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px] font-mono text-xs text-[#171717] break-all select-all">
+              <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px] font-mono text-xs text-[#171717] break-all select-all">
                 {lastAnalysedSequence}
               </div>
             </div>
@@ -484,25 +648,25 @@ export const ReportView: React.FC<ReportViewProps> = ({
             3. Comparison Summary Metrics
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Reference length</span>
               <span className="text-base font-bold text-[#171717] font-mono">{referenceSequence.length} bp</span>
             </div>
-            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Variant length</span>
               <span className="text-base font-bold text-[#171717] font-mono">{lastAnalysedSequence.length} bp</span>
             </div>
-            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Sequence identity</span>
               <span className="text-base font-bold text-[#0F766E] font-mono">
                 {analysisResult.alignment.identity_percent.toFixed(1)}%
               </span>
             </div>
-            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Total differences</span>
               <span className="text-base font-bold text-[#DC2626] font-mono">{mutations.length}</span>
             </div>
-            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[8px]">
+            <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] rounded-[6px]">
               <span className="text-[11px] text-[#737373] block font-mono">Breakdown</span>
               <span className="text-xs text-[#171717] font-mono block mt-1">
                 {substitutionsCount} sub · {insertionsCount} ins · {deletionsCount} del
@@ -782,6 +946,32 @@ export const ReportView: React.FC<ReportViewProps> = ({
             </div>
           </details>
         )}
+
+        {/* Benchmark Validation Summary */}
+        <section className="bg-[#FFFFFF] border border-[#E5E5E5] rounded-[6px] p-4 text-xs text-[#737373] space-y-1.5 shadow-xs">
+          <span className="font-semibold text-[#171717] font-mono uppercase tracking-wider text-[11px] block">
+            Validation &amp; Verification Status
+          </span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1 font-mono text-[11px]">
+            <div className="flex items-center gap-1.5 text-[#0F766E]">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#0F766E]"></span>
+              <span>Benchmark validation: 4/4 curated clinical variants correctly classified.</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[#0F766E]">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#0F766E]"></span>
+              <span>Backend validation: 38/38 test cases passed.</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[#0F766E]">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#0F766E]"></span>
+              <span>PDF report generation: Valid multi-page vector PDF generated.</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Research Use Disclaimer */}
+        <footer className="pt-2 pb-4 text-center text-xs text-[#737373] border-t border-[#E5E5E5]">
+          For research and educational use only. Not intended for clinical diagnosis or treatment decisions.
+        </footer>
       </div>
 
       {/* Staged PDF Progress & Success Modal */}

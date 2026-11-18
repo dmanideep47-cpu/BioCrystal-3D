@@ -1226,3 +1226,551 @@ def analyze_mutation_experiment(
         ],
     }
 
+
+def parse_fasta_content(fasta_text: str) -> Dict[str, Any]:
+    """
+    Parses FASTA formatted text containing DNA sequences.
+    Accepts standard FASTA:
+      - Ignores lines beginning with '>'
+      - Reads sequence lines below header
+      - Removes whitespace, line breaks, carriage returns
+      - Converts lowercase nucleotides to uppercase
+      - Validates that sequence contains only A, T, G, C, and optional N characters
+    Supports single or multiple sequences.
+    """
+    if not fasta_text or not fasta_text.strip():
+        return {
+            "valid": False,
+            "count": 0,
+            "sequences": [],
+            "error": "Invalid FASTA format. Please upload a valid DNA FASTA file.",
+        }
+
+    lines = fasta_text.splitlines()
+    if not any(line.strip().startswith(">") for line in lines):
+        return {
+            "valid": False,
+            "count": 0,
+            "sequences": [],
+            "error": "Invalid FASTA format. Please upload a valid DNA FASTA file.",
+        }
+
+    entries: List[Dict[str, Any]] = []
+    current_header: Optional[str] = None
+    current_seq_lines: List[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(">"):
+            if current_header is not None or current_seq_lines:
+                raw_seq = "".join(current_seq_lines).replace(" ", "").replace("\t", "").replace("\r", "").upper()
+                entries.append({
+                    "header": current_header or "Unnamed sequence",
+                    "sequence": raw_seq,
+                })
+                current_seq_lines = []
+            current_header = stripped[1:].strip()
+        else:
+            current_seq_lines.append(stripped)
+
+    # Append last entry
+    if current_header is not None or current_seq_lines:
+        raw_seq = "".join(current_seq_lines).replace(" ", "").replace("\t", "").replace("\r", "").upper()
+        entries.append({
+            "header": current_header or "Unnamed sequence",
+            "sequence": raw_seq,
+        })
+
+    if not entries:
+        return {
+            "valid": False,
+            "count": 0,
+            "sequences": [],
+            "error": "Invalid FASTA format. Please upload a valid DNA FASTA file.",
+        }
+
+    parsed_sequences: List[Dict[str, Any]] = []
+    valid_dna_pattern = re.compile(r"^[ATGCN]+$")
+
+    for idx, entry in enumerate(entries):
+        seq = entry["sequence"]
+        header = entry["header"]
+        if not seq or not valid_dna_pattern.match(seq):
+            return {
+                "valid": False,
+                "count": 0,
+                "sequences": [],
+                "error": "Invalid FASTA format. Please upload a valid DNA FASTA file.",
+            }
+
+        # Calculate GC percentage
+        gc_count = seq.count("G") + seq.count("C")
+        gc_pct = round((gc_count / len(seq)) * 100.0, 1) if seq else 0.0
+        seq_id = header.split()[0] if header else f"seq_{idx + 1}"
+
+        parsed_sequences.append({
+            "id": seq_id,
+            "header": header,
+            "sequence": seq,
+            "length": len(seq),
+            "gc_percent": gc_pct,
+        })
+
+    return {
+        "valid": True,
+        "count": len(parsed_sequences),
+        "sequences": parsed_sequences,
+        "error": None,
+    }
+
+
+def compute_protein_biochemical_telemetry(protein_seq: str) -> Dict[str, Any]:
+    """
+    Computes molecular mass (Da), Kyte-Doolittle GRAVY hydropathy score,
+    and net charge for a polypeptide sequence.
+    """
+    clean_prot = protein_seq.replace("*", "").replace("?", "").strip()
+    if not clean_prot:
+        return {"mass_da": 0.0, "gravy": 0.0, "net_charge": 0.0, "length": 0}
+
+    total_mass = 18.015  # Terminal H2O
+    total_hydro = 0.0
+    total_charge = 0.0
+
+    for aa in clean_prot:
+        meta = AMINO_ACID_METADATA.get(aa, AMINO_ACID_METADATA['?'])
+        mw = meta.get("mw", 110.0)
+        if mw > 0:
+            total_mass += (mw - 18.015)
+        total_hydro += meta.get("hydropathy", 0.0)
+        total_charge += meta.get("charge", 0.0)
+
+    gravy = round(total_hydro / len(clean_prot), 2)
+    return {
+        "mass_da": round(total_mass, 1),
+        "gravy": gravy,
+        "net_charge": round(total_charge, 1),
+        "length": len(clean_prot),
+    }
+
+
+def generate_mutation_impact_summary(
+    mutations: List[Dict[str, Any]],
+    reference_seq: str,
+    variant_seq: str,
+    structure_mapping: Optional[Dict[str, Any]] = None,
+    gene: Optional[str] = None,
+    is_coding: bool = True,
+    reading_frame: int = 0,
+    table_id: int = 1,
+) -> Dict[str, Any]:
+    """
+    Constructs a structured mutation impact summary for every detected sequence variation.
+    Reports mutation notation, codon position, codon change, amino-acid change, consequence,
+    premature stop status, protein length impact, PDB availability, and a concise primary interpretation sentence.
+    """
+    pdb_avail = bool(structure_mapping and structure_mapping.get("mapped"))
+    actual_pdb_id = structure_mapping.get("pdb_id") if (pdb_avail and structure_mapping.get("pdb_id")) else None
+
+    if pdb_avail and actual_pdb_id:
+        provenance_str = f"Experimentally determined Protein Data Bank (PDB) structure (PDB ID: {actual_pdb_id})."
+    else:
+        provenance_str = "No experimentally determined PDB structure available; canonical B-DNA model generated from input sequence."
+
+    if not mutations:
+        primary_interp = (
+            "Primary interpretation: No sequence alterations detected. Variant sequence is identical to reference sequence. "
+            "Canonical B-DNA analysis is shown."
+        )
+        return {
+            "has_mutations": False,
+            "total_mutations": 0,
+            "primary_interpretation": primary_interp,
+            "items": [],
+        }
+
+    items: List[Dict[str, Any]] = []
+
+    # Get translated protein products if coding
+    ref_protein = ""
+    var_protein = ""
+    if is_coding:
+        try:
+            ref_codons = translate_dna(reference_seq, reading_frame=reading_frame, table_id=table_id)
+            var_codons = translate_dna(variant_seq, reading_frame=reading_frame, table_id=table_id)
+            ref_protein = "".join(c["amino_acid"]["code1"] for c in ref_codons)
+            var_protein = "".join(c["amino_acid"]["code1"] for c in var_codons)
+        except Exception:
+            pass
+
+    for idx, mut in enumerate(mutations):
+        mtype = mut.get("type", "substitution")
+        cat = mut.get("category", "")
+        ref_pos = mut.get("reference_position") or mut.get("observed_position", 1)
+        orig_b = mut.get("original_base") or mut.get("reference_bases", "")
+        obs_b = mut.get("observed_base") or mut.get("observed_bases", "")
+        codon_idx = mut.get("affected_codon_index")
+
+        # Notation
+        if mtype == "substitution" and orig_b and obs_b:
+            notation = f"c.{ref_pos}{orig_b}>{obs_b}"
+        elif mtype == "insertion":
+            notation = f"c.{ref_pos}_{ref_pos+1}ins{obs_b}" if obs_b else f"c.{ref_pos}ins"
+        elif mtype == "deletion":
+            notation = f"c.{ref_pos}del{orig_b}" if orig_b else f"c.{ref_pos}del"
+        else:
+            notation = f"{mtype} at {ref_pos}"
+
+        # Codon change
+        ref_codon = mut.get("reference_codon") or mut.get("original_codon")
+        obs_codon = mut.get("observed_codon")
+        if ref_codon and obs_codon:
+            codon_change = f"{ref_codon} → {obs_codon}"
+        else:
+            codon_change = "—"
+
+        # Amino acid change
+        orig_aa = mut.get("original_amino_acid", {}) or {}
+        obs_aa = mut.get("observed_amino_acid", {}) or {}
+        orig_aa3 = orig_aa.get("code3") or orig_aa.get("name")
+        obs_aa3 = obs_aa.get("code3") or obs_aa.get("name")
+
+        if orig_aa3 and obs_aa3 and codon_idx:
+            aa_change = f"p.{orig_aa3}{codon_idx}{obs_aa3}"
+        elif orig_aa3 and obs_aa3:
+            aa_change = f"{orig_aa3} → {obs_aa3}"
+        else:
+            aa_change = "—"
+
+        # Consequence label
+        if cat == "missense":
+            consequence = "missense"
+            consequence_label = "Missense"
+        elif cat == "nonsense":
+            consequence = "nonsense"
+            consequence_label = "Nonsense"
+        elif cat == "synonymous":
+            consequence = "synonymous"
+            consequence_label = "Synonymous"
+        elif cat == "frameshift":
+            consequence = "frameshift"
+            consequence_label = "Frameshift"
+        elif cat == "in_frame_indel":
+            consequence = "in-frame indel"
+            consequence_label = "In-frame Indel"
+        elif not is_coding or cat == "non_coding":
+            consequence = "no protein-level change"
+            consequence_label = "Non-coding"
+        else:
+            consequence = cat or "sequence variant"
+            consequence_label = consequence.replace("_", " ").capitalize()
+
+        # Premature stop & length check
+        is_premature_stop = (cat == "nonsense") or (obs_aa.get("code3") == "Stop" and orig_aa.get("code3") != "Stop")
+        changes_len = False
+        if is_coding and ref_protein and var_protein:
+            changes_len = len(ref_protein.split("*")[0]) != len(var_protein.split("*")[0])
+        elif mtype in ("insertion", "deletion", "frameshift", "in_frame_indel"):
+            changes_len = True
+
+        # Primary interpretation sentence
+        orig_name = orig_aa.get("name") or orig_aa.get("code3") or "residue"
+        obs_name = obs_aa.get("name") or obs_aa.get("code3") or "residue"
+
+        if consequence == "missense" and codon_idx:
+            interp = f"Missense mutation detected at codon {codon_idx}. The codon changes from {ref_codon} to {obs_codon}, altering the translated amino acid from {orig_name} to {obs_name}."
+        elif consequence == "nonsense" and codon_idx:
+            interp = f"Nonsense mutation detected at codon {codon_idx}. The codon changes from {ref_codon} to {obs_codon}, introducing a premature stop codon."
+        elif consequence == "synonymous" and codon_idx:
+            interp = f"Synonymous mutation detected at codon {codon_idx}. The codon changes from {ref_codon} to {obs_codon}, conserving the {orig_name} residue."
+        elif consequence == "frameshift":
+            interp = f"Frameshift mutation detected at position {ref_pos}, altering the downstream reading frame."
+        else:
+            interp = f"{consequence_label} mutation detected at position {ref_pos}."
+
+        if pdb_avail and actual_pdb_id:
+            interp += " An experimentally determined PDB structure is available for structural mapping."
+        else:
+            interp += " No experimentally determined PDB structure is available; sequence-level and canonical B-DNA analysis are shown."
+
+        items.append({
+            "index": idx + 1,
+            "mutation_type": mtype,
+            "mutation_notation": notation,
+            "codon_position": codon_idx,
+            "codon_change": codon_change,
+            "amino_acid_change": aa_change,
+            "consequence": consequence,
+            "consequence_label": consequence_label,
+            "creates_premature_stop": is_premature_stop,
+            "changes_protein_length": changes_len,
+            "pdb_available": pdb_avail,
+            "pdb_id": actual_pdb_id,
+            "structure_provenance": provenance_str,
+            "primary_interpretation": f"Primary interpretation: {interp}",
+        })
+
+    first_item = items[0]
+    overall_interp = first_item["primary_interpretation"]
+
+    return {
+        "has_mutations": True,
+        "total_mutations": len(items),
+        "primary_interpretation": overall_interp,
+        "items": items,
+    }
+
+
+def compare_two_variants(
+    reference_seq: str,
+    variant_a_seq: str,
+    variant_b_seq: str,
+    variant_a_name: str = "Variant A",
+    variant_b_name: str = "Variant B",
+    gene: Optional[str] = None,
+    pdb_id: Optional[str] = None,
+    reading_frame: int = 0,
+    table_id: int = 1,
+    is_coding: bool = True,
+) -> Dict[str, Any]:
+    """
+    Compares two variant sequences against the identical reference sequence.
+    Runs alignment, mutation classification, protein consequence translation,
+    and biophysical parameter determination independently for both variants.
+    Returns comparison rows for all 13 required metrics and a concise comparison conclusion.
+    """
+    # 1. Align both variants
+    aln_a = perform_pairwise_alignment(
+        ref_seq=reference_seq,
+        obs_seq=variant_a_seq,
+        reading_frame=reading_frame,
+        table_id=table_id,
+        is_coding=is_coding,
+    )
+    aln_b = perform_pairwise_alignment(
+        ref_seq=reference_seq,
+        obs_seq=variant_b_seq,
+        reading_frame=reading_frame,
+        table_id=table_id,
+        is_coding=is_coding,
+    )
+
+    # 2. Biophysical & GC/Tm profiles
+    try:
+        from dna_biophysics import compute_dna_biophysics
+    except ImportError:
+        from backend.dna_biophysics import compute_dna_biophysics
+
+    bio_ref = compute_dna_biophysics(reference_seq, mutations=[])
+    bio_a = compute_dna_biophysics(variant_a_seq, mutations=aln_a.get("mutations", []))
+    bio_b = compute_dna_biophysics(variant_b_seq, mutations=aln_b.get("mutations", []))
+
+    tm_ref = bio_ref["thermodynamics"]["melting_temperature_c"]
+    gc_ref = bio_ref["spectroscopic_profile"]["gc_percent"]
+
+    tm_a = bio_a["thermodynamics"]["melting_temperature_c"]
+    gc_a = bio_a["spectroscopic_profile"]["gc_percent"]
+    delta_tm_a = round(tm_a - tm_ref, 1)
+    delta_gc_a = round(gc_a - gc_ref, 1)
+
+    tm_b = bio_b["thermodynamics"]["melting_temperature_c"]
+    gc_b = bio_b["spectroscopic_profile"]["gc_percent"]
+    delta_tm_b = round(tm_b - tm_ref, 1)
+    delta_gc_b = round(gc_b - gc_ref, 1)
+
+    # 3. Protein telemetry
+    ref_prot = ""
+    prot_a = ""
+    prot_b = ""
+    if is_coding:
+        try:
+            ref_codons = translate_dna(reference_seq, reading_frame=reading_frame, table_id=table_id)
+            codons_a = translate_dna(variant_a_seq, reading_frame=reading_frame, table_id=table_id)
+            codons_b = translate_dna(variant_b_seq, reading_frame=reading_frame, table_id=table_id)
+            ref_prot = "".join(c["amino_acid"]["code1"] for c in ref_codons).split("*")[0]
+            prot_a = "".join(c["amino_acid"]["code1"] for c in codons_a).split("*")[0]
+            prot_b = "".join(c["amino_acid"]["code1"] for c in codons_b).split("*")[0]
+        except Exception:
+            pass
+
+    tele_ref = compute_protein_biochemical_telemetry(ref_prot)
+    tele_a = compute_protein_biochemical_telemetry(prot_a)
+    tele_b = compute_protein_biochemical_telemetry(prot_b)
+
+    delta_mw_a = round(tele_a["mass_da"] - tele_ref["mass_da"], 1)
+    delta_gravy_a = round(tele_a["gravy"] - tele_ref["gravy"], 2)
+    delta_charge_a = round(tele_a["net_charge"] - tele_ref["net_charge"], 1)
+
+    delta_mw_b = round(tele_b["mass_da"] - tele_ref["mass_da"], 1)
+    delta_gravy_b = round(tele_b["gravy"] - tele_ref["gravy"], 2)
+    delta_charge_b = round(tele_b["net_charge"] - tele_ref["net_charge"], 1)
+
+    # 4. Structure mapping
+    try:
+        from structure_engine import map_mutations_to_structure
+    except ImportError:
+        from backend.structure_engine import map_mutations_to_structure
+
+    smap_a = map_mutations_to_structure(
+        gene=gene,
+        pdb_id=pdb_id,
+        mutations=aln_a.get("mutations", []),
+        reference_sequence=reference_seq,
+        is_coding=is_coding,
+        reading_frame=reading_frame,
+    )
+    smap_b = map_mutations_to_structure(
+        gene=gene,
+        pdb_id=pdb_id,
+        mutations=aln_b.get("mutations", []),
+        reference_sequence=reference_seq,
+        is_coding=is_coding,
+        reading_frame=reading_frame,
+    )
+
+    impact_a = generate_mutation_impact_summary(
+        mutations=aln_a.get("mutations", []),
+        reference_seq=reference_seq,
+        variant_seq=variant_a_seq,
+        structure_mapping=smap_a,
+        gene=gene,
+        is_coding=is_coding,
+        reading_frame=reading_frame,
+        table_id=table_id,
+    )
+    impact_b = generate_mutation_impact_summary(
+        mutations=aln_b.get("mutations", []),
+        reference_seq=reference_seq,
+        variant_seq=variant_b_seq,
+        structure_mapping=smap_b,
+        gene=gene,
+        is_coding=is_coding,
+        reading_frame=reading_frame,
+        table_id=table_id,
+    )
+
+    item_a = impact_a["items"][0] if impact_a["items"] else {
+        "mutation_type": "Wild-type",
+        "mutation_notation": "None",
+        "codon_change": "—",
+        "amino_acid_change": "—",
+        "consequence_label": "Identical",
+        "primary_interpretation": impact_a["primary_interpretation"],
+    }
+    item_b = impact_b["items"][0] if impact_b["items"] else {
+        "mutation_type": "Wild-type",
+        "mutation_notation": "None",
+        "codon_change": "—",
+        "amino_acid_change": "—",
+        "consequence_label": "Identical",
+        "primary_interpretation": impact_b["primary_interpretation"],
+    }
+
+    pdb_avail_a = bool(smap_a.get("mapped"))
+    pdb_id_a = smap_a.get("pdb_id") if pdb_avail_a else None
+    pdb_label_a = f"Available ({pdb_id_a})" if pdb_avail_a and pdb_id_a else ("Available" if pdb_avail_a else "Unavailable")
+
+    pdb_avail_b = bool(smap_b.get("mapped"))
+    pdb_id_b = smap_b.get("pdb_id") if pdb_avail_b else None
+    pdb_label_b = f"Available ({pdb_id_b})" if pdb_avail_b and pdb_id_b else ("Available" if pdb_avail_b else "Unavailable")
+
+    # Format 13 metrics for Variant A & Variant B
+    row_a = {
+        "variant_label": variant_a_name,
+        "mutation_type": item_a.get("mutation_type", "substitution"),
+        "mutation_notation": item_a.get("mutation_notation", "—"),
+        "codon_change": item_a.get("codon_change", "—"),
+        "amino_acid_change": item_a.get("amino_acid_change", "—"),
+        "mutation_consequence": item_a.get("consequence_label", "Missense"),
+        "protein_mw_change": f"{delta_mw_a:+.1f} Da",
+        "gravy_score_change": f"{delta_gravy_a:+.2f}",
+        "net_charge_change": f"{delta_charge_a:+.1f}",
+        "gc_content_change": f"{delta_gc_a:+.1f}%",
+        "melting_temp_change": f"{delta_tm_a:+.1f}°C",
+        "pdb_availability": pdb_label_a,
+        "primary_interpretation": item_a.get("primary_interpretation", "").replace("Primary interpretation: ", ""),
+    }
+
+    row_b = {
+        "variant_label": variant_b_name,
+        "mutation_type": item_b.get("mutation_type", "substitution"),
+        "mutation_notation": item_b.get("mutation_notation", "—"),
+        "codon_change": item_b.get("codon_change", "—"),
+        "amino_acid_change": item_b.get("amino_acid_change", "—"),
+        "mutation_consequence": item_b.get("consequence_label", "Missense"),
+        "protein_mw_change": f"{delta_mw_b:+.1f} Da",
+        "gravy_score_change": f"{delta_gravy_b:+.2f}",
+        "net_charge_change": f"{delta_charge_b:+.1f}",
+        "gc_content_change": f"{delta_gc_b:+.1f}%",
+        "melting_temp_change": f"{delta_tm_b:+.1f}°C",
+        "pdb_availability": pdb_label_b,
+        "primary_interpretation": item_b.get("primary_interpretation", "").replace("Primary interpretation: ", ""),
+    }
+
+    # Generate concise comparison conclusion
+    conclusion_parts = []
+    conseq_a = item_a.get("consequence_label", "").lower()
+    conseq_b = item_b.get("consequence_label", "").lower()
+    aa_a = item_a.get("amino_acid_change", "")
+    aa_b = item_b.get("amino_acid_change", "")
+
+    if conseq_a == conseq_b and conseq_a:
+        conclusion_parts.append(f"Both variants are {conseq_a} mutations.")
+    else:
+        conclusion_parts.append(f"{variant_a_name} is a {conseq_a} mutation, while {variant_b_name} is a {conseq_b} mutation.")
+
+    # Amino acid difference
+    if aa_a and aa_b and aa_a != "—" and aa_b != "—":
+        conclusion_parts.append(f"{variant_a_name} confers {aa_a}, while {variant_b_name} confers {aa_b}.")
+
+    # PDB mapping status
+    if pdb_avail_a and pdb_avail_b:
+        conclusion_parts.append("Both variants can be mapped to available experimental PDB structures.")
+    elif pdb_avail_a:
+        conclusion_parts.append(f"Only {variant_a_name} maps to an experimental PDB structure.")
+    elif pdb_avail_b:
+        conclusion_parts.append(f"Only {variant_b_name} maps to an experimental PDB structure.")
+    else:
+        conclusion_parts.append("Neither variant has an experimental PDB structure available; canonical B-DNA conformations are modeled.")
+
+    conclusion = " ".join(conclusion_parts)
+
+    return {
+        "reference_length": len(reference_seq),
+        "gene": gene,
+        "conclusion": conclusion,
+        "variant_a": {
+            "name": variant_a_name,
+            "sequence": variant_a_seq,
+            "alignment": aln_a,
+            "impact_summary": impact_a,
+            "telemetry": {
+                "mw_delta": delta_mw_a,
+                "gravy_delta": delta_gravy_a,
+                "charge_delta": delta_charge_a,
+                "gc_delta": delta_gc_a,
+                "tm_delta": delta_tm_a,
+            },
+            "pdb_id": pdb_id_a,
+            "pdb_available": pdb_avail_a,
+        },
+        "variant_b": {
+            "name": variant_b_name,
+            "sequence": variant_b_seq,
+            "alignment": aln_b,
+            "impact_summary": impact_b,
+            "telemetry": {
+                "mw_delta": delta_mw_b,
+                "gravy_delta": delta_gravy_b,
+                "charge_delta": delta_charge_b,
+                "gc_delta": delta_gc_b,
+                "tm_delta": delta_tm_b,
+            },
+            "pdb_id": pdb_id_b,
+            "pdb_available": pdb_avail_b,
+        },
+        "rows": [row_a, row_b],
+    }
+

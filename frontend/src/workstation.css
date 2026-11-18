@@ -282,21 +282,21 @@
 }
 
 .bc-workstation .bc-command-bar .hud-btn-core {
-  min-height: 36px;
-  border-radius: 0 !important;
+  min-height: 32px;
+  border-radius: 6px !important;
 }
 
 .bc-workstation .bc-command-bar .hud-btn-core.bg-white {
-  border: 1px solid #DCE3DE !important;
+  border: 1px solid #E5E5E5 !important;
   background: #FFFFFF !important;
-  color: #202B2A !important;
-  border-radius: 0 !important;
+  color: #171717 !important;
+  border-radius: 6px !important;
 }
 
 .bc-workstation .bc-command-bar .hud-btn-core.bg-white:hover {
-  border-color: #176B68 !important;
-  background: #F1F5F1 !important;
-  color: #202B2A !important;
+  border-color: #0F766E !important;
+  background: #FAFAFA !important;
+  color: #171717 !important;
 }
 
 .bc-workstation .bc-command-brand {
@@ -330,16 +330,16 @@
 
 .bc-workstation .bc-command-link,
 .bc-workstation .bc-command-primary {
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 14px;
-  border-radius: 0 !important;
+  border-radius: 6px !important;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 140ms ease;
+  transition: all 150ms ease;
 }
 
 .bc-workstation .bc-command-link {
@@ -637,20 +637,20 @@
 }
 
 .bc-methodology-overlay {
-  background: rgb(16 24 40 / 48%);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
 }
 
 .bc-methodology-dialog {
   display: flex;
-  width: min(100%, 720px);
-  max-height: min(86vh, 780px);
+  width: min(100%, 640px);
+  max-height: min(86vh, 720px);
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #E4E8E3;
-  border-radius: 0 !important;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px !important;
   background: #FFFFFF;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.1);
 }
 
 .bc-methodology-header,
@@ -659,38 +659,40 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 24px;
-  border-bottom: 1px solid #E4E8E3;
+  padding: 16px 24px;
+  border-bottom: 1px solid #F0F0F0;
 }
 
 .bc-methodology-header h2 {
   margin: 0;
-  color: #202B2A;
-  font-size: 16px;
-  font-weight: 650;
+  color: #171717;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .bc-methodology-close {
   border: 0;
   background: none;
-  color: #66736F;
+  color: #737373;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  transition: color 140ms ease;
+  transition: color 150ms ease;
 }
 
 .bc-methodology-close:hover {
-  color: #202B2A;
+  color: #171717;
 }
 
 .bc-methodology-content {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   overflow-y: auto;
   padding: 24px;
-  color: #202B2A;
+  color: #171717;
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 .bc-methodology-content section {
@@ -700,14 +702,15 @@
 
 .bc-methodology-content h3 {
   margin: 0;
-  color: #176B68;
+  color: #0F766E;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .bc-methodology-content p,
 .bc-methodology-content ul {
   margin: 0;
+  color: #737373;
 }
 
 .bc-methodology-content ul {
@@ -719,36 +722,36 @@
 }
 
 .bc-methodology-disclaimer {
-  padding: 16px;
-  border: 1px solid #E4E8E3;
-  border-radius: 0 !important;
-  background: #F0F2ED;
-  color: #66736F;
+  padding: 14px 16px;
+  border: 1px solid #E5E5E5;
+  border-radius: 6px !important;
+  background: #FAFAFA;
+  color: #737373;
 }
 
 .bc-methodology-footer {
   justify-content: flex-end;
-  border-top: 1px solid #E4E8E3;
+  border-top: 1px solid #F0F0F0;
   border-bottom: 0;
-  padding-block: 14px;
+  padding-block: 12px;
 }
 
 .bc-methodology-primary {
-  min-height: 38px;
+  min-height: 34px;
   padding: 0 16px;
-  border: 1px solid #176B68;
-  border-radius: 0 !important;
-  background: #176B68;
-  color: #fff;
+  border: 1px solid #0F766E;
+  border-radius: 6px !important;
+  background: #0F766E;
+  color: #ffffff;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 140ms ease;
+  transition: all 150ms ease;
 }
 
 .bc-methodology-primary:hover {
-  background: #125956;
-  border-color: #125956;
+  background: #115E59;
+  border-color: #115E59;
 }
 
 .bc-workstation .bc-results-toolbar {

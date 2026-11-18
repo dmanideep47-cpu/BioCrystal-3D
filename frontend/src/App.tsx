@@ -20,7 +20,7 @@ import { ReportView } from './components/ui/ReportView';
 import { HelpLimitationsModal } from './components/ui/HelpLimitationsModal';
 import { TacticalButton } from './components/ui/TacticalButton';
 import { ScientificLoader } from './components/ui/ScientificLoader';
-import { BookOpen, Plus } from 'lucide-react';
+import { BookOpen, Plus, Database, GitCompare, FileText } from 'lucide-react';
 
 import type {
   AnalysisContext,
@@ -28,12 +28,14 @@ import type {
   FullAnalysisResult,
   MutationExperimentResult,
   SequenceEditRecord,
+  VariantComparisonResult,
 } from './types/dna';
 
 import {
   analyzeMutationExperimentAPI,
   compareSequencesAPI,
   fetchPdbAPI,
+  compareVariantsAPI,
 } from './services/apiService';
 
 type RequestKind = 'compare' | 'reanalyse' | 'replace';
@@ -212,12 +214,12 @@ function AnalysisSkeleton({ message }: { message: string }) {
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      className="flex h-full min-h-0 flex-col overflow-y-auto bg-[#FAFAF9] p-6 sm:p-8"
+      className="flex h-full min-h-0 flex-col overflow-y-auto bg-[#FAFAFA] p-6 sm:p-8"
     >
       <div className="max-w-4xl mx-auto w-full space-y-6">
         <div className="bg-[#FFFFFF] border border-[#E5E5E5] rounded-[8px] p-6 shadow-xs">
           <ScientificLoader
-            title={message || 'Processing DNA Sequence Comparison'}
+            title={message || 'Analyzing DNA Sequences'}
             stage="Running In-Silico Pipeline"
             subtext="Performing global Needleman-Wunsch pairwise alignment, translation, thermodynamic analysis, and 3D molecular mapping…"
           />
@@ -265,6 +267,9 @@ export function App() {
 
   const [analysis, setAnalysis] = useState<AnalysisSnapshot | null>(null);
   const analysisRef = useRef<AnalysisSnapshot | null>(null);
+
+  const [variantComparison, setVariantComparison] = useState<VariantComparisonResult | null>(null);
+  const [isComparingVariants, setIsComparingVariants] = useState<boolean>(false);
 
   const [draft, setDraftState] = useState('');
   const draftRef = useRef('');
@@ -390,6 +395,60 @@ export function App() {
         'compare',
         null,
       );
+    },
+    [runAnalysis],
+  );
+
+  const handleCompareVariants = useCallback(
+    async (params: {
+      referenceSequence: string;
+      variantASequence: string;
+      variantBSequence: string;
+      variantAName?: string;
+      variantBName?: string;
+      context: AnalysisContext;
+      options: AnalysisOptions;
+    }): Promise<void> => {
+      setIsComparingVariants(true);
+      setFailure(null);
+      setPending({
+        kind: 'compare',
+        message: 'Comparing dual variants against shared reference…',
+      });
+      try {
+        const res = await compareVariantsAPI({
+          reference_sequence: params.referenceSequence,
+          variant_a_sequence: params.variantASequence,
+          variant_b_sequence: params.variantBSequence,
+          variant_a_name: params.variantAName,
+          variant_b_name: params.variantBName,
+          gene: params.context.gene,
+          reading_frame: params.context.readingFrame || 0,
+          table_id: 1,
+          is_coding: true,
+        });
+        setVariantComparison(res);
+
+        // Run baseline pairwise analysis on Variant A so the rest of the workstation (3D viewer, translation) is populated
+        await runAnalysis(
+          {
+            reference: params.referenceSequence,
+            variant: params.variantASequence,
+            context: params.context,
+          },
+          'compare',
+          null,
+        );
+        setActiveTab('results');
+      } catch (err: any) {
+        setFailure({
+          kind: 'compare',
+          message: err.message || 'Dual variant comparison failed.',
+        });
+      } finally {
+        setIsComparingVariants(false);
+        setPending(null);
+      }
     },
     [runAnalysis],
   );
@@ -617,21 +676,12 @@ export function App() {
 
   const handleNewAnalysis = useCallback(() => {
     invalidateRequest();
-
-    analysisRef.current = null;
-    setAnalysis(null);
-
-    setDraft('');
-    setHistory([]);
     setFailure(null);
     setActiveTab('analyze');
-    setInputVersion((value) => value + 1);
-  }, [invalidateRequest, setDraft, setHistory]);
+  }, [invalidateRequest]);
 
   const navigate = useCallback((tab: AppNavTab) => {
     if (pendingRef.current) return;
-    if (tab !== 'analyze' && !analysisRef.current) return;
-
     setActiveTab(tab);
   }, []);
 
@@ -667,22 +717,73 @@ export function App() {
 
   return (
     <div className="bc-workstation flex h-screen w-full flex-col overflow-hidden bg-white text-black">
-      <header className="bc-command-bar z-30 flex h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#E5E5E5] bg-white px-6">
+      <header className="bc-command-bar z-30 flex h-12 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#E5E5E5] bg-white px-6">
         <div className="bc-command-brand flex min-w-0 items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="bc-command-wordmark whitespace-nowrap font-bold text-[14px] text-[#171717] tracking-wide">
+            <span className="bc-command-wordmark whitespace-nowrap font-bold text-[13px] text-[#171717] tracking-wider uppercase font-mono">
               BIOCRYSTAL <span className="text-[#0F766E]">3D</span>
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-[4px] bg-[#F0FDFA] text-[#0F766E] font-semibold border border-[#CCFBF1]">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-[#F0FDFA] text-[#0F766E] font-medium border border-[#CCFBF1]">
               v2.4
             </span>
           </div>
 
-          <div className="h-4 w-px bg-[#E5E5E5]" />
+          <div className="h-3.5 w-px bg-[#E5E5E5]" />
 
-          <span className="bc-command-section text-xs font-medium text-[#737373]">
-            {pageLabel}
-          </span>
+          <nav
+            className="inline-flex items-center p-0.5 rounded-[6px] bg-[#F5F5F5] border border-[#E5E5E5] gap-0.5"
+            role="tablist"
+            aria-label="Workspace Destinations"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'analyze'}
+              onClick={() => navigate('analyze')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-[4px] text-xs transition-all duration-150 cursor-pointer border ${
+                activeTab === 'analyze'
+                  ? 'bg-[#FFFFFF] text-[#171717] font-semibold shadow-xs border-[#E5E5E5]'
+                  : 'border-transparent text-[#737373] font-medium hover:text-[#171717]'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-[#0F766E]" />
+              <span>Analyze</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'results'}
+              disabled={!hasAnalysis}
+              onClick={() => hasAnalysis && navigate('results')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-[4px] text-xs transition-all duration-150 cursor-pointer border ${
+                !hasAnalysis
+                  ? 'opacity-40 text-[#A3A3A3] cursor-not-allowed border-transparent'
+                  : activeTab === 'results'
+                  ? 'bg-[#FFFFFF] text-[#171717] font-semibold shadow-xs border-[#E5E5E5]'
+                  : 'border-transparent text-[#737373] font-medium hover:text-[#171717]'
+              }`}
+            >
+              <GitCompare className="w-3.5 h-3.5 text-[#0F766E]" />
+              <span>Results &amp; Edit</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'report'}
+              disabled={!hasAnalysis}
+              onClick={() => hasAnalysis && navigate('report')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-[4px] text-xs transition-all duration-150 cursor-pointer border ${
+                !hasAnalysis
+                  ? 'opacity-40 text-[#A3A3A3] cursor-not-allowed border-transparent'
+                  : activeTab === 'report'
+                  ? 'bg-[#FFFFFF] text-[#171717] font-semibold shadow-xs border-[#E5E5E5]'
+                  : 'border-transparent text-[#737373] font-medium hover:text-[#171717]'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-[#0F766E]" />
+              <span>Report</span>
+            </button>
+          </nav>
         </div>
 
         <div className="bc-command-actions flex items-center gap-2.5">
@@ -692,7 +793,7 @@ export function App() {
             size="sm"
             arrow={false}
             onClick={() => setHelpOpen(true)}
-            icon={<BookOpen className="w-3.5 h-3.5 text-[#176B68]" />}
+            icon={<BookOpen className="w-3.5 h-3.5 text-[#0F766E]" />}
           >
             Methodology
           </TacticalButton>
@@ -735,12 +836,12 @@ export function App() {
           {showGlobalError && failure && (
             <div
               role="alert"
-              className="flex shrink-0 items-start justify-between gap-4 border-b border-red-500 px-5 py-3 text-sm"
+              className="flex shrink-0 items-start justify-between gap-4 border-b border-[#FECACA] bg-[#FEF2F2] px-6 py-3 text-xs text-[#DC2626]"
             >
-              <div>
-                <p className="font-semibold">Analysis was not completed.</p>
-                <p className="mt-1">{failure.message}</p>
-                <p className="mt-1">
+              <div className="space-y-0.5">
+                <p className="font-semibold text-sm">Analysis was not completed.</p>
+                <p className="text-xs">{failure.message}</p>
+                <p className="text-[11px] text-[#DC2626]/80">
                   Your draft and previous completed result were preserved.
                 </p>
               </div>
@@ -748,7 +849,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setFailure(null)}
-                className="shrink-0 underline underline-offset-4"
+                className="shrink-0 text-xs text-[#737373] hover:text-[#171717] underline cursor-pointer"
               >
                 Dismiss
               </button>
@@ -763,7 +864,8 @@ export function App() {
               <SequenceInputWorkspace
                 key={inputVersion}
                 onAnalyze={handleAnalyze}
-                isAnalyzing={isAnalyzing}
+                onCompareVariants={handleCompareVariants}
+                isAnalyzing={isAnalyzing || isComparingVariants}
                 analysisStageText={pending?.message ?? ''}
                 analysisError={
                   failure?.kind === 'compare' ? failure.message : null
@@ -786,20 +888,21 @@ export function App() {
               {hasPendingEdits && (
                 <div
                   role="status"
-                  className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-5 py-3 text-sm"
+                  className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#E5E5E5] bg-[#F0FDFA] px-6 py-2.5 text-xs text-[#0F766E]"
                 >
-                  <p>
-                    Your draft has changed. Highlighting and results below
-                    belong to the last completed analysis.
+                  <p className="font-medium">
+                    Results correspond to the previously analyzed sequence. Current draft contains unsaved edits.
                   </p>
 
-                  <button
+                  <TacticalButton
                     type="button"
+                    variant="primary"
+                    size="sm"
+                    arrow={false}
                     onClick={() => void handleReanalyse()}
-                    className="rounded bg-black px-4 py-2 text-white"
                   >
-                    Reanalyse edits
-                  </button>
+                    Re-run analysis
+                  </TacticalButton>
                 </div>
               )}
 
@@ -822,13 +925,38 @@ export function App() {
                 organism={analysis.context.organism}
                 pdbData={analysis.pdbData}
                 onNavigateToReport={() => navigate('report')}
+                onNavigateToAnalyze={() => navigate('analyze')}
                 onReplaceSequences={handleReplaceSequences}
                 mutationExperiment={analysis.experiment}
+                variantComparison={variantComparison}
               />
             </div>
           )}
 
-          {activeTab === 'report' && analysis && (
+          {activeTab === 'results' && !analysis && (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#FFFFFF] text-[#171717] text-center">
+              <div className="max-w-md p-8 border border-[#E5E5E5] rounded-[8px] bg-[#FAFAFA] space-y-4 shadow-xs">
+                <h2 className="text-base font-semibold font-mono text-[#171717] uppercase tracking-wider">
+                  No Analysis Completed
+                </h2>
+                <p className="text-xs text-[#737373] leading-relaxed">
+                  No sequence analysis results are available yet. Input reference and variant sequences or upload a FASTA file in Analyze to view alignment and mutation metrics.
+                </p>
+                <TacticalButton
+                  type="button"
+                  variant="primary"
+                  size="md"
+                  arrow={false}
+                  onClick={() => navigate('analyze')}
+                  icon={<Database className="w-3.5 h-3.5 text-white" />}
+                >
+                  Go to Analyze
+                </TacticalButton>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'report' && (
             <div
               hidden={!!pending}
               className="flex min-h-0 flex-1 flex-col"
@@ -836,35 +964,46 @@ export function App() {
               {hasPendingEdits && (
                 <div
                   role="status"
-                  className="shrink-0 border-b border-neutral-200 px-5 py-3 text-sm"
+                  className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#E5E5E5] bg-[#F0FDFA] px-6 py-2.5 text-xs text-[#0F766E]"
                 >
-                  This report excludes draft edits that have not been
-                  successfully analyzed.
+                  <p className="font-medium">
+                    Results correspond to the previously analyzed sequence. Current draft contains unsaved edits.
+                  </p>
+                  <TacticalButton
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    arrow={false}
+                    onClick={() => void handleReanalyse()}
+                  >
+                    Re-run analysis
+                  </TacticalButton>
                 </div>
               )}
 
               <ReportView
-                key={analysis.version}
-                analysisResult={analysis.result}
-                referenceSequence={analysis.reference}
-                originalSubmittedSequence={analysis.originalVariant}
-                currentEditedSequence={analysis.variant}
-                lastAnalysedSequence={analysis.variant}
+                key={analysis?.version ?? 'empty-report'}
+                analysisResult={analysis?.result ?? null}
+                referenceSequence={analysis?.reference ?? ''}
+                originalSubmittedSequence={analysis?.originalVariant ?? ''}
+                currentEditedSequence={analysis?.variant ?? ''}
+                lastAnalysedSequence={analysis?.variant ?? ''}
                 editHistory={[]}
-                revision={analysis.revision}
-                analysisId={analysis.id}
-                analysisTimestamp={analysis.timestamp}
-                gene={analysis.context.gene}
-                accession={analysis.context.accession}
-                organism={analysis.context.organism}
-                sequenceType={analysis.context.sequenceType}
-                readingFrame={analysis.context.readingFrame}
-                geneticCode={analysis.context.geneticCode}
+                revision={analysis?.revision ?? 1}
+                analysisId={analysis?.id ?? ''}
+                analysisTimestamp={analysis?.timestamp ?? ''}
+                gene={analysis?.context.gene ?? ''}
+                accession={analysis?.context.accession ?? ''}
+                organism={analysis?.context.organism ?? ''}
+                sequenceType={analysis?.context.sequenceType ?? 'coding'}
+                readingFrame={analysis?.context.readingFrame ?? 0}
+                geneticCode={analysis?.context.geneticCode ?? 'standard'}
                 onReanalyse={handleReanalyse}
                 isReanalysing={isReanalysing}
-                currentExperiment={analysis.experiment}
+                currentExperiment={analysis?.experiment ?? null}
                 onNavigateToResults={() => navigate('results')}
                 onNavigateToAnalyze={() => navigate('analyze')}
+                variantComparison={variantComparison}
               />
             </div>
           )}

@@ -549,7 +549,11 @@ export const MolecularSurfaceViewer: React.FC<MolecularSurfaceViewerProps> = ({
         <div className="z-10 flex flex-wrap items-center justify-between gap-2 border-t border-[#E5E5E5] bg-[#FFFFFF] px-5 py-2.5 text-xs text-[#737373]">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-[#171717]">
-              {isDnaStructure ? 'Computed canonical B-DNA' : `Reference structure ${provenance.pdb_id || ''}`}
+              {isDnaStructure
+                ? 'Canonical B-DNA model generated from input sequence.'
+                : (provenance.pdb_id
+                    ? `Experimentally determined Protein Data Bank (PDB) structure (PDB ID: ${provenance.pdb_id}).`
+                    : 'No experimentally determined PDB structure available for this sequence. Sequence-level and canonical B-DNA analysis are shown.')}
             </span>
             {provenance.pdb_id && <span>· {provenance.pdb_id}</span>}
             {provenance.chain && <span>· Chain {provenance.chain}</span>}

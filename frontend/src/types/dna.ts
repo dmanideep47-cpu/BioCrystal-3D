@@ -458,6 +458,108 @@ export interface FullAnalysisResult {
   variant_intelligence?: any;
   pdb_data?: string | null;
   structure_error?: string | null;
+  metadata?: {
+    reference_hash: string;
+    variant_hash: string;
+    mutation_classification: string;
+    codon_change: string | null;
+    amino_acid_change: string | null;
+    pdb_available: boolean;
+    pdb_id: string | null;
+    structure_provenance_type: 'experimental_pdb' | 'canonical_dna' | 'unavailable';
+    primary_interpretation: string;
+  };
+  mutation_impact_summary?: MutationImpactSummary;
+  fasta_metadata?: FastaSequenceItem | null;
+}
+
+export interface FastaSequenceItem {
+  id: string;
+  header: string;
+  sequence: string;
+  length: number;
+  gc_percent: number;
+}
+
+export interface FastaParseResult {
+  valid: boolean;
+  sequences: FastaSequenceItem[];
+  error: string | null;
+}
+
+export interface MutationImpactItem {
+  index: number;
+  mutation_type: string;
+  mutation_notation: string;
+  codon_position: number | null;
+  codon_change: string;
+  amino_acid_change: string;
+  consequence: string;
+  consequence_label: string;
+  creates_premature_stop: boolean;
+  changes_protein_length: boolean;
+  pdb_available: boolean;
+  pdb_id: string | null;
+  structure_provenance: string;
+  primary_interpretation: string;
+}
+
+export interface MutationImpactSummary {
+  has_mutations: boolean;
+  total_mutations: number;
+  primary_interpretation: string;
+  items: MutationImpactItem[];
+}
+
+export interface VariantComparisonRow {
+  variant_label: string;
+  mutation_type: string;
+  mutation_notation: string;
+  codon_change: string;
+  amino_acid_change: string;
+  mutation_consequence: string;
+  protein_mw_change: string;
+  gravy_score_change: string;
+  net_charge_change: string;
+  gc_content_change: string;
+  melting_temp_change: string;
+  pdb_availability: string;
+  primary_interpretation: string;
+}
+
+export interface VariantComparisonResult {
+  reference_length: number;
+  gene?: string | null;
+  conclusion: string;
+  variant_a: {
+    name: string;
+    sequence: string;
+    impact_summary: MutationImpactSummary;
+    telemetry: {
+      mw_delta: number;
+      gravy_delta: number;
+      charge_delta: number;
+      gc_delta: number;
+      tm_delta: number;
+    };
+    pdb_id?: string | null;
+    pdb_available: boolean;
+  };
+  variant_b: {
+    name: string;
+    sequence: string;
+    impact_summary: MutationImpactSummary;
+    telemetry: {
+      mw_delta: number;
+      gravy_delta: number;
+      charge_delta: number;
+      gc_delta: number;
+      tm_delta: number;
+    };
+    pdb_id?: string | null;
+    pdb_available: boolean;
+  };
+  rows: VariantComparisonRow[];
 }
 
 export interface CorrectionRecommendationResult {

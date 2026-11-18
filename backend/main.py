@@ -1,10 +1,11 @@
 import os
 import sys
+import hashlib
 
 # Ensure current backend directory is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -18,6 +19,9 @@ from bio_engine import (
     perform_exploratory_analysis,
     generate_correction_candidates,
     analyze_mutation_experiment,
+    parse_fasta_content,
+    generate_mutation_impact_summary,
+    compare_two_variants,
 )
 from structure_engine import (
     fetch_pdb_file,
@@ -127,6 +131,23 @@ class PropertyAnalysisRequest(BaseModel):
     table_id: Optional[int] = 1
 
 
+class FastaParseRequest(BaseModel):
+    fasta_content: Optional[str] = None
+
+
+class VariantComparisonRequest(BaseModel):
+    reference_sequence: str = Field(..., description="Reference DNA sequence")
+    variant_a_sequence: str = Field(..., description="Variant A DNA sequence")
+    variant_b_sequence: str = Field(..., description="Variant B DNA sequence")
+    variant_a_name: Optional[str] = "Variant A"
+    variant_b_name: Optional[str] = "Variant B"
+    gene: Optional[str] = None
+    pdb_id: Optional[str] = None
+    reading_frame: Optional[int] = 0
+    table_id: Optional[int] = 1
+    is_coding: Optional[bool] = True
+
+
 class PDFExportRequest(BaseModel):
     model_config = {"extra": "allow"}
     original_sequence: str
@@ -171,6 +192,44 @@ def health_check():
 @app.post("/api/validate")
 def api_validate(req: ValidateRequest):
     return validate_dna_sequence(req.sequence)
+
+
+@app.post("/api/fasta/parse")
+async def api_fasta_parse(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+):
+    content = ""
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type:
+        try:
+            form = await request.form()
+            uploaded = form.get("file")
+            if uploaded and hasattr(uploaded, "read"):
+                raw_bytes = await uploaded.read()
+                content = raw_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            pass
+    elif "application/json" in content_type:
+        try:
+            body = await request.json()
+            content = body.get("fasta_content", "") or body.get("content", "") or body.get("sequence", "")
+        except Exception:
+            pass
+    else:
+        try:
+            body_bytes = await request.body()
+            content = body_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            pass
+
+    result = parse_fasta_content(content)
+    if not result.get("valid"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error") or "Invalid FASTA format. Please upload a valid DNA FASTA file."
+        )
+    return result
 
 
 @app.post("/api/mutate")
@@ -358,6 +417,132 @@ def api_compare(req: CompareRequest):
             "error": str(vi_err),
         }
 
+    # Scientific metadata and interpretation provenance
+    ref_clean = ref_val["cleaned_sequence"]
+    obs_clean = obs_val["cleaned_sequence"]
+    ref_hash = hashlib.sha256(ref_clean.encode('utf-8')).hexdigest()[:8]
+    var_hash = hashlib.sha256(obs_clean.encode('utf-8')).hexdigest()[:8]
+
+    mutations_list = alignment_res.get("mutations", [])
+    primary_mut = mutations_list[0] if mutations_list else None
+
+    pdb_avail = bool(structure_mapping and structure_mapping.get("mapped"))
+    actual_pdb_id = structure_mapping.get("pdb_id") if (pdb_avail and structure_mapping.get("pdb_id")) else None
+
+    if pdb_avail and actual_pdb_id:
+        structure_provenance_type = "experimental_pdb"
+    elif dna_structure and dna_structure.get("pdb_content"):
+        structure_provenance_type = "canonical_dna"
+    else:
+        structure_provenance_type = "unavailable"
+
+    if not mutations_list:
+        mutation_classification = "Wild-type (Identical)"
+        codon_change = None
+        amino_acid_change = None
+        primary_interpretation = (
+            f"Interpretation: No sequence alterations detected. Variant sequence matches wild-type reference "
+            f"across all {len(ref_clean)} base pairs. Canonical B-DNA conformation modeled."
+        )
+    else:
+        cat = primary_mut.get("category", "")
+        mtype = primary_mut.get("type", "variant")
+        ref_pos = primary_mut.get("reference_position") or primary_mut.get("observed_position", 1)
+        orig_b = primary_mut.get("original_base", "")
+        obs_b = primary_mut.get("observed_base", "")
+
+        if cat == "missense":
+            mutation_classification = "Missense"
+        elif cat == "nonsense":
+            mutation_classification = "Nonsense"
+        elif cat == "synonymous":
+            mutation_classification = "Synonymous"
+        elif cat == "frameshift":
+            mutation_classification = f"Frameshift {mtype.capitalize()}"
+        elif cat == "in_frame_indel":
+            mutation_classification = "In-frame Indel"
+        elif cat:
+            mutation_classification = cat.replace("_", " ").capitalize()
+        else:
+            mutation_classification = mtype.capitalize()
+
+        ref_codon = primary_mut.get("reference_codon") or primary_mut.get("original_codon")
+        obs_codon = primary_mut.get("observed_codon")
+        if ref_codon and obs_codon:
+            codon_change = f"{ref_codon} > {obs_codon}"
+        else:
+            codon_change = None
+
+        orig_aa = primary_mut.get("original_amino_acid", {}) or {}
+        obs_aa = primary_mut.get("observed_amino_acid", {}) or {}
+        orig_aa3 = orig_aa.get("code3") or orig_aa.get("name")
+        obs_aa3 = obs_aa.get("code3") or obs_aa.get("name")
+        codon_idx = primary_mut.get("affected_codon_index")
+
+        if orig_aa3 and obs_aa3 and codon_idx:
+            amino_acid_change = f"p.{orig_aa3}{codon_idx}{obs_aa3}"
+        elif orig_aa3 and obs_aa3:
+            amino_acid_change = f"{orig_aa3} > {obs_aa3}"
+        else:
+            amino_acid_change = None
+
+        hgvs_c = f"c.{ref_pos}{orig_b}>{obs_b}" if (mtype == "substitution" and orig_b and obs_b) else f"{mtype} at pos {ref_pos}"
+        aa_label = f", {amino_acid_change}" if amino_acid_change else ""
+
+        interp_parts = []
+        if mtype == "substitution":
+            interp_parts.append(f"Single nucleotide variant ({hgvs_c}{aa_label}) detected" + (f" in codon {codon_idx}." if codon_idx else f" at position {ref_pos}."))
+        elif mtype == "insertion":
+            interp_parts.append(f"Insertion variant ({hgvs_c}{aa_label}) detected at position {ref_pos}.")
+        elif mtype == "deletion":
+            interp_parts.append(f"Deletion variant ({hgvs_c}{aa_label}) detected at position {ref_pos}.")
+        else:
+            interp_parts.append(f"Variant ({hgvs_c}{aa_label}) detected at position {ref_pos}.")
+
+        if cat == "missense":
+            interp_parts.append(f"Missense mutation resulting in {orig_aa.get('name', 'residue')} to {obs_aa.get('name', 'residue')} substitution.")
+        elif cat == "nonsense":
+            interp_parts.append(f"Nonsense mutation introducing premature termination at codon {codon_idx}.")
+        elif cat == "synonymous":
+            interp_parts.append(f"Synonymous variant conserving {orig_aa.get('name', 'amino acid')} sequence.")
+        elif cat == "frameshift":
+            interp_parts.append("Frameshift mutation altering downstream translational reading frame.")
+        elif cat == "in_frame_indel":
+            interp_parts.append("In-frame indel preserving downstream reading frame.")
+
+        if len(mutations_list) > 1:
+            interp_parts.append(f"{len(mutations_list)} total sequence variations identified.")
+
+        if pdb_avail and actual_pdb_id:
+            interp_parts.append(f"Experimentally determined Protein Data Bank (PDB) structure ({actual_pdb_id}) mapped with atomic resolution.")
+        else:
+            interp_parts.append("Canonical B-DNA conformation modeled; no experimentally determined PDB structure mapped.")
+
+        primary_interpretation = "Interpretation: " + " ".join(interp_parts)
+
+    metadata = {
+        "reference_hash": ref_hash,
+        "variant_hash": var_hash,
+        "mutation_classification": mutation_classification,
+        "codon_change": codon_change,
+        "amino_acid_change": amino_acid_change,
+        "pdb_available": pdb_avail,
+        "pdb_id": actual_pdb_id,
+        "structure_provenance_type": structure_provenance_type,
+        "primary_interpretation": primary_interpretation,
+    }
+
+    mutation_impact = generate_mutation_impact_summary(
+        mutations=mutations_list,
+        reference_seq=ref_clean,
+        variant_seq=obs_clean,
+        structure_mapping=structure_mapping,
+        gene=req.gene,
+        is_coding=req.is_coding if req.is_coding is not None else True,
+        reading_frame=req.reading_frame or 0,
+        table_id=req.table_id or 1,
+    )
+
     return {
         "reference_validation": ref_val,
         "observed_validation": obs_val,
@@ -366,7 +551,40 @@ def api_compare(req: CompareRequest):
         "dna_biophysics": dna_biophysics,
         "dna_structure": dna_structure,
         "variant_intelligence": variant_intelligence,
+        "metadata": metadata,
+        "mutation_impact_summary": mutation_impact,
     }
+
+
+@app.post("/api/compare-variants")
+def api_compare_variants(req: VariantComparisonRequest):
+    ref_val = validate_dna_sequence(req.reference_sequence)
+    var_a_val = validate_dna_sequence(req.variant_a_sequence)
+    var_b_val = validate_dna_sequence(req.variant_b_sequence)
+
+    if not ref_val["is_valid"]:
+        raise HTTPException(status_code=400, detail=f"Invalid reference sequence: {', '.join(ref_val['errors'])}")
+    if not var_a_val["is_valid"]:
+        raise HTTPException(status_code=400, detail=f"Invalid Variant A sequence: {', '.join(var_a_val['errors'])}")
+    if not var_b_val["is_valid"]:
+        raise HTTPException(status_code=400, detail=f"Invalid Variant B sequence: {', '.join(var_b_val['errors'])}")
+
+    try:
+        comparison = compare_two_variants(
+            reference_seq=ref_val["cleaned_sequence"],
+            variant_a_seq=var_a_val["cleaned_sequence"],
+            variant_b_seq=var_b_val["cleaned_sequence"],
+            variant_a_name=req.variant_a_name or "Variant A",
+            variant_b_name=req.variant_b_name or "Variant B",
+            gene=req.gene,
+            pdb_id=req.pdb_id,
+            reading_frame=req.reading_frame or 0,
+            table_id=req.table_id or 1,
+            is_coding=req.is_coding if req.is_coding is not None else True,
+        )
+        return comparison
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Variant comparison failed: {str(exc)}")
 
 
 @app.post("/api/intelligence/analyze")

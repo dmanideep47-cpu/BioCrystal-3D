@@ -6,6 +6,8 @@ import {
   MutationExperimentResult,
   PropertyObjective,
   PropertyAnalysisResponse,
+  FastaParseResult,
+  VariantComparisonResult,
 } from '../types/dna';
 
 /**
@@ -289,6 +291,78 @@ export async function analyzePropertyAPI(params: {
       throw new Error(detail);
     }
 
+    return response.json();
+  } catch (err: any) {
+    throw new Error(formatApiError(err));
+  }
+}
+
+/**
+ * Parses uploaded FASTA file (.fasta, .fa) or raw FASTA text.
+ */
+export async function parseFastaFileAPI(file: File): Promise<FastaParseResult> {
+  const url = `${getApiBase()}/api/fasta/parse`;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Invalid FASTA format. Please upload a valid DNA FASTA file.');
+    }
+    return response.json();
+  } catch (err: any) {
+    throw new Error(formatApiError(err));
+  }
+}
+
+export async function parseFastaTextAPI(content: string): Promise<FastaParseResult> {
+  const url = `${getApiBase()}/api/fasta/parse`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fasta_content: content }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Invalid FASTA format. Please upload a valid DNA FASTA file.');
+    }
+    return response.json();
+  } catch (err: any) {
+    throw new Error(formatApiError(err));
+  }
+}
+
+/**
+ * Compares two variant sequences against the identical reference sequence.
+ */
+export async function compareVariantsAPI(params: {
+  reference_sequence: string;
+  variant_a_sequence: string;
+  variant_b_sequence: string;
+  variant_a_name?: string;
+  variant_b_name?: string;
+  gene?: string;
+  pdb_id?: string;
+  reading_frame?: number;
+  table_id?: number;
+  is_coding?: boolean;
+}): Promise<VariantComparisonResult> {
+  const url = `${getApiBase()}/api/compare-variants`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Variant comparison failed.');
+    }
     return response.json();
   } catch (err: any) {
     throw new Error(formatApiError(err));

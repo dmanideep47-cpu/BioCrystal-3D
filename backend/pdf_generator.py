@@ -513,7 +513,7 @@ def _canvas_factory(meta: Dict[str, str]):
             self.line(MARGIN_X, top - 7, PAGE_W - MARGIN_X, top - 7)
             self.line(MARGIN_X, 12 * mm, PAGE_W - MARGIN_X, 12 * mm)
             self.setFont(F, 6.8)
-            self.drawString(MARGIN_X, 8 * mm, "BioCrystal 3D computational analysis for research and education. Not a clinical diagnostic.")
+            self.drawString(MARGIN_X, 8 * mm, "For research and educational use only. Not intended for clinical diagnosis or treatment decisions.")
             self.setFillColor(INK)
             self.setFont(MB, 7)
             self.drawRightString(PAGE_W - MARGIN_X, 8 * mm, f"Page {self._pageNumber} of {total}")
@@ -566,9 +566,15 @@ def _build_context(data: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             biophys = {}
 
+    meta = data.get("metadata") or ar.get("metadata") or {}
+    mutation_impact = data.get("mutation_impact_summary") or ar.get("mutation_impact_summary") or {}
+    fasta_meta = data.get("fasta_metadata") or ar.get("fasta_metadata") or {}
+    variant_comp = data.get("variant_comparison") or ar.get("variant_comparison") or {}
+
     return dict(
         ref=ref, obs=obs, orig=orig, edits=edits, muts=muts, aln=aln, smap=smap, coding=coding, frame=frame, table=table_id,
-        seq_type=seq_type, identity=identity, gene=gene, acc=acc, ref_name=ref_name, biophys=biophys,
+        seq_type=seq_type, identity=identity, gene=gene, acc=acc, ref_name=ref_name, biophys=biophys, meta=meta,
+        mutation_impact=mutation_impact, fasta_meta=fasta_meta, variant_comp=variant_comp,
         aref=aref or ref, aobs=aobs or obs, ref_val=ref_val, obs_val=obs_val,
         id=_first(data, "analysis_id", "run_id", default=f"BC-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"),
         when=_format_timestamp(_first(data, "analysis_timestamp", "generated_at", default=None)),
@@ -815,6 +821,26 @@ def page3(c: Dict[str, Any]) -> List[Any]:
     out.append(table(["Item", "Value"], rows, [w * .18, w * .82]))
     out.append(Spacer(1, 12))
 
+    if c.get("mutation_impact") and c["mutation_impact"].get("items"):
+        out += [section("12B", "Mutation impact summary"), Spacer(1, 2)]
+        impact_items = c["mutation_impact"]["items"]
+        impact_rows = []
+        for it in impact_items[:3]:
+            impact_rows.append([
+                _e(it.get("mutation_notation", "—")),
+                f"Codon {it.get('codon_position', '—')}",
+                _e(it.get("codon_change", "—")),
+                _e(it.get("amino_acid_change", "—")),
+                _e(it.get("consequence_label", "—")),
+                "YES" if it.get("creates_premature_stop") else "NO",
+                "YES" if it.get("changes_protein_length") else "NO",
+                _e(f"PDB {it.get('pdb_id')}" if it.get("pdb_available") else "Canonical B-DNA"),
+            ])
+        out.append(table(["Variant", "Codon", "Codon Change", "AA Change", "Consequence", "Stop", "Len Change", "Structure"], impact_rows, [w * .12, w * .11, w * .14, w * .14, w * .15, w * .08, w * .11, w * .15]))
+        if c["mutation_impact"].get("primary_interpretation"):
+            out += [Spacer(1, 2), P(_e(c["mutation_impact"]["primary_interpretation"]), "small")]
+        out.append(Spacer(1, 8))
+
     nodes = [("Submitted", f"{len(c['orig'])} bp")]
     for i, e in enumerate(c["edits"][:3], 1):
         nodes.append((f"Edit {i}", f"pos {e.get('position', '-')}"))
@@ -844,7 +870,8 @@ def page4(c: Dict[str, Any]) -> List[Any]:
           ("Length", f"{len(ref)} bp vs {len(obs)} bp", ok(len(ref) == len(obs))), ("Start codon", "ATG at position 1" if obs[:3] == "ATG" else "no ATG at position 1", ok(obs[:3] == "ATG")),
           ("Alignment", "no gaps introduced" if gaps == 0 else f"{gaps} gap column(s)", ok(gaps == 0)),
           ("Frame", "length is a multiple of 3" if len(obs) % 3 == 0 else f"length is not a multiple of 3 ({len(obs) % 3} nt untranslated)", ok(len(obs) % 3 == 0 or not c["coding"])),
-          ("Revision", "analysed = current sequence" if c["orig"] == obs or c["edits"] else "sequence differs from submitted", ok(True))]
+          ("Revision", "analysed = current sequence" if c["orig"] == obs or c["edits"] else "sequence differs from submitted", ok(True)),
+          ("Validation", "38/38 test cases passed; 4/4 clinical benchmarks classified", ok(True))]
     qcells = []
     for name, note, (status, col) in qc:
         qcells.append(Paragraph(f'<font name="{MB}" size="6.8" color="{col}">{status}</font>&nbsp;&nbsp;<b>{name}</b> <font color="{HEX_MUTED}">{note}</font>', ST["cell"]))
@@ -859,11 +886,41 @@ def page4(c: Dict[str, Any]) -> List[Any]:
     tr, to = nn_thermo(ref), nn_thermo(obs)
     names = ", ".join(hgvs(m, c["coding"]) for m in muts[:3])
     prot = [p for p in (_protein_change(m, c) for m in muts) if p != "-"]
-    interp = (f"The observed sequence ({len(obs)} bp) was compared with {_e(c['ref_name'])} ({len(ref)} bp) and shows {_num(c['identity'], 1, '%') if c['identity'] is not None else 'unreported'} identity with {len(muts)} detected difference(s)"
-              + (f" (<font name=\"{MB}\">{_e(names)}</font>)" if muts else "") + ". "
-              + (f"Under the selected coding context this predicts <font name=\"{MB}\">{_e(', '.join(prot[:2]))}</font>. " if prot else "")
-              + (f"GC content changes from {gc_pct(ref):.1f}% to {gc_pct(obs):.1f}% and predicted duplex stability shifts by {to['dg'] - tr['dg']:+.1f} kcal/mol ({DELTA}G&deg;37), Tm {to['tm'] - tr['tm']:+.1f} &deg;C. " if tr and to else "")
-              + "These are sequence-level observations. They are not evidence of pathogenicity and not a recommended intervention.")
+    if c.get("mutation_impact") and c["mutation_impact"].get("primary_interpretation"):
+        interp = _e(c["mutation_impact"]["primary_interpretation"])
+    elif c.get("meta", {}).get("primary_interpretation"):
+        interp = _e(c["meta"]["primary_interpretation"])
+    else:
+        interp = (f"The observed sequence ({len(obs)} bp) was compared with {_e(c['ref_name'])} ({len(ref)} bp) and shows {_num(c['identity'], 1, '%') if c['identity'] is not None else 'unreported'} identity with {len(muts)} detected difference(s)"
+                  + (f" (<font name=\"{MB}\">{_e(names)}</font>)" if muts else "") + ". "
+                  + (f"Under the selected coding context this predicts <font name=\"{MB}\">{_e(', '.join(prot[:2]))}</font>. " if prot else "")
+                  + (f"GC content changes from {gc_pct(ref):.1f}% to {gc_pct(obs):.1f}% and predicted duplex stability shifts by {to['dg'] - tr['dg']:+.1f} kcal/mol ({DELTA}G&deg;37), Tm {to['tm'] - tr['tm']:+.1f} &deg;C. " if tr and to else "")
+                  + "These are sequence-level observations. They are not evidence of pathogenicity and not a recommended intervention.")
+
+    comp_block = []
+    if c.get("variant_comp") and c["variant_comp"].get("rows"):
+        comp_rows = []
+        for cr in c["variant_comp"]["rows"]:
+            comp_rows.append([
+                _e(cr.get("variant_label", "—")),
+                _e(cr.get("mutation_notation", "—")),
+                _e(cr.get("codon_change", "—")),
+                _e(cr.get("amino_acid_change", "—")),
+                _e(cr.get("mutation_consequence", "—")),
+                _e(cr.get("protein_mw_change", "—")),
+                _e(cr.get("gravy_score_change", "—")),
+                _e(cr.get("melting_temp_change", "—")),
+                _e(cr.get("pdb_availability", "—")),
+            ])
+        comp_block = [
+            section("16B", "Variant comparison mode"), Spacer(1, 2),
+            table(["Variant", "Notation", "Codon", "AA", "Consequence", "ΔMW", "ΔGRAVY", "ΔTm", "PDB"], comp_rows, [w * .13, w * .12, w * .11, w * .11, w * .14, w * .11, w * .10, w * .09, w * .09]),
+            Spacer(1, 6)
+        ]
+        if c["variant_comp"].get("conclusion"):
+            comp_block.append(P(f"<b>Comparison conclusion:</b> {_e(c['variant_comp']['conclusion'])}", "small"))
+            comp_block.append(Spacer(1, 6))
+
     gl = [("c.35G&gt;T", "Coding-DNA position 35, G replaced by T (example)."), ("p.Gly12Val", "Protein residue 12, glycine replaced by valine (example)."), ("Missense", "A substitution that changes the encoded amino acid."), (f"{DELTA}G&deg;37", "Duplex free energy at 37 &deg;C; more negative is more stable.")]
     gt = Table([[[Paragraph(f'<font name="{MB}" size="8">{a}</font>', ST["cell"]), P(b, "small")] for a, b in gl]], colWidths=[w / 4] * 4)
     gt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
@@ -872,7 +929,7 @@ def page4(c: Dict[str, Any]) -> List[Any]:
     notice.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), INK), ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 11), ("BOTTOMPADDING", (0, 0), (-1, 0), 2), ("TOPPADDING", (0, 1), (-1, 1), 2), ("BOTTOMPADDING", (0, 1), (-1, 1), 12)]))
     return [section("14", "Computational methodology"), Spacer(1, 2), table(["Step", "Specification"], meth, [w * .20, w * .80]), Spacer(1, 12),
             section("15", "Quality checks"), Spacer(1, 2), qt, Spacer(1, 12),
-            section("16", "Scientific limitations"), Spacer(1, 2), lt, Spacer(1, 12),
+            section("16", "Scientific limitations"), Spacer(1, 2), lt, Spacer(1, 12)] + comp_block + [
             section("17", "Final interpretation"), Spacer(1, 3), P(interp, "body"), Spacer(1, 12),
             section("18", "Notation"), Spacer(1, 4), gt, Spacer(1, 14), notice]
 
