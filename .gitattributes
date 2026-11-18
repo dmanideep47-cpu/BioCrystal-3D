@@ -1,0 +1,9 @@
+# Treat all binary file extensions as binary (no line ending conversion)
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdb binary
+*.gz binary
+*.zip binary
