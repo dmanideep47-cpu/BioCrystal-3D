@@ -261,6 +261,24 @@ export function App() {
     }
     return false;
   });
+
+  useEffect(() => {
+    const handleHash = () => {
+      if (
+        window.location.hash === '#lab' ||
+        window.location.search.includes('lab=true') ||
+        window.location.pathname.includes('/lab')
+      ) {
+        setLaunched(true);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handleHash);
+    return () => {
+      window.removeEventListener('hashchange', handleHash);
+      window.removeEventListener('popstate', handleHash);
+    };
+  }, []);
   const [activeTab, setActiveTab] = useState<AppNavTab>('results');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -301,12 +319,12 @@ export function App() {
     setPending(null);
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    return () => {
       generation.current += 1;
-    },
-    [],
-  );
+      pendingRef.current = false;
+    };
+  }, []);
 
   const runAnalysis = useCallback(
     async (
@@ -375,10 +393,8 @@ export function App() {
 
         return false;
       } finally {
-        if (requestId === generation.current) {
-          pendingRef.current = false;
-          setPending(null);
-        }
+        pendingRef.current = false;
+        setPending(null);
       }
     },
     [setDraft, setHistory],

@@ -53,4 +53,10 @@ Desktop.ini
 .claude/
 backend/pdb_cache/DNA_*.pdb
 
+# Report temporary Chrome profiles & previews
+report/.chrome*
+report/.test_chrome*
+report/pdf_preview_pages/
+
+
 

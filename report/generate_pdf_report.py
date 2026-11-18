@@ -163,17 +163,49 @@ def build_pdf_report():
 
     story = []
 
-    def make_ph_box(fig_num, label, height=44):
-        txt = f"<b>{fig_num}: {label}</b><br/><font color='#64748B' size='6.5'>[Empirical Application Capture / High-Resolution Rendering Placeholder]</font>"
+    def make_ph_box(fig_num, label, height=44, img_path=None):
+        if img_path and os.path.exists(img_path):
+            img_h = max(height - 14, 25)
+            img = Image(img_path, width=503, height=img_h)
+            cap = Paragraph(f"<b>{fig_num}:</b> {label}", style_caption)
+            t = Table([[img], [cap]], colWidths=[505], rowHeights=[img_h, 14])
+            t.setStyle(TableStyle([
+                ('BOX', (0,0), (-1,-1), 0.6, colors.HexColor('#94A3B8')),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('BACKGROUND', (0,1), (0,1), colors.HexColor('#F8FAFC')),
+            ]))
+            return t
+
+    def make_half_box(fig_num, label, height=60, img_path=None):
+        if img_path and os.path.exists(img_path):
+            img_h = max(height - 14, 25)
+            img = Image(img_path, width=248, height=img_h)
+            cap = Paragraph(f"<b>{fig_num}:</b> {label}", style_caption)
+            t = Table([[img], [cap]], colWidths=[250], rowHeights=[img_h, 14])
+            t.setStyle(TableStyle([
+                ('BOX', (0,0), (-1,-1), 0.6, colors.HexColor('#94A3B8')),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('BACKGROUND', (0,1), (0,1), colors.HexColor('#F8FAFC')),
+            ]))
+            return t
+        txt = f"<b>{fig_num}: {label}</b>"
         p = Paragraph(txt, style_ph)
-        t = Table([[p]], colWidths=[505], rowHeights=[height])
+        t = Table([[p]], colWidths=[250], rowHeights=[height])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
             ('BOX', (0,0), (-1,-1), 0.8, colors.HexColor('#CBD5E1')),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
-            ('TOPPADDING', (0,0), (-1,-1), 2),
         ]))
         return t
 
@@ -386,7 +418,7 @@ def build_pdf_report():
                            "provably grounded scientific workstation that unites Needleman–Wunsch alignment, in-silico translation, SantaLucia 1998 thermodynamics, "
                            "and dual 3D visualization (canonical B-DNA + verified PDB structures) in an interactive, reactive browser interface.", style_body))
     story.append(Spacer(1, 6))
-    story.append(make_ph_box("Figure 2", "BioCrystal 3D DNA Sequence Input Workspace & FASTA Ingestion Interface", 48))
+    story.append(make_ph_box("Figure 2", "BioCrystal 3D DNA Sequence Input Workspace & FASTA Ingestion Interface", 75, "report/assets/screenshots/workstation_analyze_input.png"))
     story.append(PageBreak())
 
     # =========================================================================
@@ -566,7 +598,7 @@ def build_pdf_report():
     )
     story.append(Paragraph(flow_box, style_body))
     story.append(Spacer(1, 6))
-    story.append(make_ph_box("Figure 3", "Interactive Needleman–Wunsch Alignment View with Mutation Highlighting", 46))
+    story.append(make_ph_box("Figure 3", "Interactive Needleman–Wunsch Alignment View with Mutation Highlighting", 75, "report/assets/screenshots/alignment_results_crop.png"))
     story.append(PageBreak())
 
     # =========================================================================
@@ -611,7 +643,7 @@ def build_pdf_report():
     )
     story.append(Paragraph(ex_nw, style_body))
     story.append(Spacer(1, 4))
-    story.append(make_ph_box("Figure 4", "BioCrystal 3D Mutation Classification Table & Consequence Breakdown", 44))
+    story.append(make_ph_box("Figure 4", "BioCrystal 3D Mutation Classification Table & Consequence Breakdown", 75, "report/assets/screenshots/results_top_panel.png"))
     story.append(PageBreak())
 
     # =========================================================================
@@ -660,7 +692,7 @@ def build_pdf_report():
     )
     story.append(Paragraph(calc_ex, style_body))
     story.append(Spacer(1, 3))
-    story.append(make_ph_box("Figure 5", "In-Silico Translation & SantaLucia Thermodynamics Analysis Panel", 42))
+    story.append(make_ph_box("Figure 5", "In-Silico Translation & SantaLucia Thermodynamics Analysis Panel", 75, "report/assets/screenshots/workstation_translation.png"))
     story.append(PageBreak())
 
     # =========================================================================
@@ -704,13 +736,19 @@ def build_pdf_report():
     story.append(Spacer(1, 4))
 
     t_ph_3d = Table([
-        [make_ph_box("Figure 7", "Canonical B-DNA 3D Helical Visualization", 42),
-         make_ph_box("Figure 8", "KRAS G12D PDB 6OIM Structure Mapping (5 Å Neighborhood)", 42)]
+        [make_half_box("Figure 7", "KRAS G12D 3D Structure (PDB: 6OIM)", 65, "report/assets/screenshots/structure_crop.png"),
+         make_half_box("Figure 8", "Genomic Target Duplex Locus Mapping", 65, "report/assets/report_figures/figure7_biological.png")]
     ], colWidths=[250, 250])
-    t_ph_3d.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    t_ph_3d.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+    ]))
     story.append(t_ph_3d)
-    story.append(Spacer(1, 4))
-    story.append(make_ph_box("Figure 9", "Primary Interpretation Panel with Empirical Provenance Badges", 36))
+    story.append(Spacer(1, 3))
+    story.append(make_ph_box("Figure 9", "Primary Interpretation Panel with Provenance Badges", 55, "report/assets/screenshots/results_top_panel.png"))
     story.append(PageBreak())
 
     # =========================================================================
