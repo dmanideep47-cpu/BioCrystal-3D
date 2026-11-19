@@ -245,46 +245,65 @@ def compute_structural_comparison(
     """
     Computes an authentic structural comparison between the Reference (Before)
     and Variant (After) macromolecular structures.
+    Strictly avoids hardcoded defaults:
+      - If mutations is empty: reports wild-type unmutated state (0 mutations, 0.000 Å RMSD).
+      - If a genuine mutant PDB exists: performs real C-alpha superposition and contact analysis.
+      - If no mutant PDB exists: clearly marks mutant structure as unavailable without fabricating coordinates.
     """
     gene_upper = (gene or "").strip().upper()
     curated_gene = CURATED_STRUCTURAL_PAIRS.get(gene_upper)
 
-    # Detect mutation notation (e.g. G12D, G12V)
+    has_mutation = len(mutations) > 0
     mut_key = None
-    wt_aa1 = "G"
-    mut_aa1 = "D"
-    res_num = 12
+    wt_aa1: Optional[str] = None
+    mut_aa1: Optional[str] = None
+    res_num: Optional[int] = None
 
-    for m in mutations:
-        if m.get("type") == "substitution":
-            oa = m.get("reference_amino_acid") or m.get("original_amino_acid")
-            ma = m.get("observed_amino_acid")
-            if isinstance(oa, dict):
-                wt_aa1 = oa.get("code1") or CODE3_TO_1.get(oa.get("code3", ""), "G")
-            elif isinstance(oa, str) and len(oa) == 1:
-                wt_aa1 = oa.upper()
+    if has_mutation:
+        for m in mutations:
+            if m.get("type") == "substitution":
+                oa = m.get("reference_amino_acid") or m.get("original_amino_acid")
+                ma = m.get("observed_amino_acid")
+                if isinstance(oa, dict):
+                    c3 = (oa.get("code3") or "").upper()
+                    wt_aa1 = oa.get("code1") or CODE3_TO_1.get(c3, None)
+                elif isinstance(oa, str) and len(oa) == 1:
+                    wt_aa1 = oa.upper()
+                elif isinstance(oa, str) and len(oa) == 3:
+                    wt_aa1 = CODE3_TO_1.get(oa.upper(), None)
 
-            if isinstance(ma, dict):
-                mut_aa1 = ma.get("code1") or CODE3_TO_1.get(ma.get("code3", ""), "D")
-            elif isinstance(ma, str) and len(ma) == 1:
-                mut_aa1 = ma.upper()
+                if isinstance(ma, dict):
+                    c3 = (ma.get("code3") or "").upper()
+                    mut_aa1 = ma.get("code1") or CODE3_TO_1.get(c3, None)
+                elif isinstance(ma, str) and len(ma) == 1:
+                    mut_aa1 = ma.upper()
+                elif isinstance(ma, str) and len(ma) == 3:
+                    mut_aa1 = CODE3_TO_1.get(ma.upper(), None)
 
-            pos = m.get("codon_number") or m.get("reference_position") or 12
-            if isinstance(pos, int) and pos > 100:
-                # If nucleotide position, convert to codon
-                res_num = (pos - 1) // 3 + 1
-            elif isinstance(pos, int):
-                res_num = pos
-            mut_key = f"{wt_aa1}{res_num}{mut_aa1}"
-            break
+                pos = m.get("codon_number") or m.get("affected_codon_index") or m.get("reference_position")
+                if isinstance(pos, int) and pos > 100:
+                    res_num = (pos - 1) // 3 + 1
+                elif isinstance(pos, int):
+                    res_num = pos
+
+                if wt_aa1 and mut_aa1 and res_num:
+                    mut_key = f"{wt_aa1}{res_num}{mut_aa1}"
+                    break
 
     # Determine reference and mutant structural models
     ref_info: Dict[str, Any] = {}
     mut_info: Dict[str, Any] = {}
     is_experimental = False
+    rmsd_val: Optional[float] = None
+    contacts_wt: List[str] = []
+    contacts_mut: List[str] = []
+    observations: List[str] = []
 
     if curated_gene:
         ref_conf = curated_gene["reference"]
+        ref_wt_res = ref_conf["wt_residue"]
+        ref_res_num = ref_conf["wt_residue_num"]
+
         ref_info = {
             "is_experimental": True,
             "pdb_id": ref_conf["pdb_id"],
@@ -292,156 +311,264 @@ def compute_structural_comparison(
             "title": ref_conf["title"],
             "method": ref_conf["method"],
             "resolution": ref_conf["resolution"],
-            "residue_name": AA_PROPERTIES.get(ref_conf["wt_residue"], {}).get("name", "Glycine"),
-            "residue_code": ref_conf["wt_residue"],
-            "residue_code3": AA_PROPERTIES.get(ref_conf["wt_residue"], {}).get("code3", "GLY"),
-            "residue_number": ref_conf["wt_residue_num"],
+            "residue_name": AA_PROPERTIES.get(ref_wt_res, {}).get("name", "Residue"),
+            "residue_code": ref_wt_res,
+            "residue_code3": AA_PROPERTIES.get(ref_wt_res, {}).get("code3", "UNK"),
+            "residue_number": ref_res_num,
             "structural_region": ref_conf["region"],
             "secondary_structure": ref_conf["secondary_structure"],
             "database": "RCSB Protein Data Bank",
         }
 
-        # Look up variant structure
-        var_conf = curated_gene["variants"].get(mut_key)
-        if not var_conf:
-            # Check if any variant exists for this residue number
-            for k, v in curated_gene["variants"].items():
-                if v["mut_residue_num"] == res_num:
-                    var_conf = v
-                    break
-            if not var_conf:
-                var_conf = next(iter(curated_gene["variants"].values()))
+        if not has_mutation:
+            # Unmutated Wild-Type state
+            is_experimental = True
+            rmsd_val = 0.000
+            mut_info = {
+                "is_experimental": True,
+                "pdb_id": ref_conf["pdb_id"],
+                "chain": ref_conf["chain"],
+                "title": f"{ref_conf['title']} (Unmutated Reference State)",
+                "method": ref_conf["method"],
+                "resolution": ref_conf["resolution"],
+                "residue_name": AA_PROPERTIES.get(ref_wt_res, {}).get("name", "Residue"),
+                "residue_code": ref_wt_res,
+                "residue_code3": AA_PROPERTIES.get(ref_wt_res, {}).get("code3", "UNK"),
+                "residue_number": ref_res_num,
+                "structural_region": ref_conf["region"],
+                "secondary_structure": ref_conf["secondary_structure"],
+                "clash_impact": "None — wild-type unmutated conformation.",
+                "database": "RCSB Protein Data Bank",
+            }
+            observations = [
+                f"Reference wild-type macromolecular structure confirmed (PDB {ref_conf['pdb_id']}).",
+                "Variant sequence is identical to wild-type reference standard across all aligned positions.",
+                "Zero C-alpha backbone displacement (0.000 Å RMSD) and conserved catalytic active-site geometry.",
+            ]
+        else:
+            # Check if this specific mutation has an authentic experimental mutant structure
+            var_conf = curated_gene["variants"].get(mut_key) if mut_key else None
 
-        mut_info = {
-            "is_experimental": True,
-            "pdb_id": var_conf["pdb_id"],
-            "chain": var_conf["chain"],
-            "title": var_conf["title"],
-            "method": var_conf["method"],
-            "resolution": var_conf["resolution"],
-            "residue_name": AA_PROPERTIES.get(var_conf["mut_residue"], {}).get("name", "Aspartate"),
-            "residue_code": var_conf["mut_residue"],
-            "residue_code3": AA_PROPERTIES.get(var_conf["mut_residue"], {}).get("code3", "ASP"),
-            "residue_number": var_conf["mut_residue_num"],
-            "structural_region": var_conf["region"],
-            "secondary_structure": var_conf["secondary_structure"],
-            "clash_impact": var_conf["clash_impact"],
-            "database": "RCSB Protein Data Bank",
-        }
-        is_experimental = True
+            if var_conf:
+                is_experimental = True
+                mut_res_code = var_conf["mut_residue"]
+                mut_res_num = var_conf["mut_residue_num"]
+
+                mut_info = {
+                    "is_experimental": True,
+                    "pdb_id": var_conf["pdb_id"],
+                    "chain": var_conf["chain"],
+                    "title": var_conf["title"],
+                    "method": var_conf["method"],
+                    "resolution": var_conf["resolution"],
+                    "residue_name": AA_PROPERTIES.get(mut_res_code, {}).get("name", "Residue"),
+                    "residue_code": mut_res_code,
+                    "residue_code3": AA_PROPERTIES.get(mut_res_code, {}).get("code3", "UNK"),
+                    "residue_number": mut_res_num,
+                    "structural_region": var_conf["region"],
+                    "secondary_structure": var_conf["secondary_structure"],
+                    "clash_impact": var_conf["clash_impact"],
+                    "database": "RCSB Protein Data Bank",
+                }
+                observations = [
+                    f"Direct crystallographic comparison between wild-type ({ref_conf['pdb_id']}) and variant ({var_conf['pdb_id']}).",
+                    var_conf.get("clash_impact", "Mutation introduces steric perturbation at the catalytic active site."),
+                    f"Local secondary structure alteration: {ref_conf['secondary_structure']} to {var_conf['secondary_structure']}.",
+                ]
+            else:
+                # Mutation is not among curated experimental mutant structures
+                is_experimental = False
+                target_aa = mut_aa1 or "X"
+                target_num = res_num or ref_res_num
+                mut_info = {
+                    "is_experimental": False,
+                    "pdb_id": None,
+                    "chain": ref_conf["chain"],
+                    "title": f"Predicted {gene_upper} {mut_key or 'Variant'} (Experimental mutant PDB unavailable)",
+                    "method": "In-silico Sequence Analysis & Reference Projection",
+                    "resolution": "Not experimentally determined in PDB",
+                    "residue_name": AA_PROPERTIES.get(target_aa, {}).get("name", "Substituted residue"),
+                    "residue_code": target_aa,
+                    "residue_code3": AA_PROPERTIES.get(target_aa, {}).get("code3", "UNK"),
+                    "residue_number": target_num,
+                    "structural_region": ref_conf["region"],
+                    "secondary_structure": "Unverified tertiary mutant fold",
+                    "clash_impact": f"Mutation {mut_key or 'detected'} mapped to {ref_conf['region']}. Experimental coordinates unavailable.",
+                    "database": "BioCrystal 3D Sequence-to-Structure Mapper",
+                }
+                observations = [
+                    f"Reference wild-type structure mapped to PDB {ref_conf['pdb_id']}.",
+                    f"No experimentally determined mutant structure available in PDB for {mut_key or 'this variant'}.",
+                    "Reference experimental structure and sequence-level analysis are displayed without coordinate fabrication.",
+                ]
     else:
         # Canonical B-DNA duplex mode
         is_experimental = False
-        ref_pdb_id = f"DNA_WT_{len(reference_sequence or '')}bp"
-        mut_pdb_id = f"DNA_MUT_{len(variant_sequence or '')}bp"
+        ref_len = len(reference_sequence or "")
+        var_len = len(variant_sequence or "")
+        ref_pdb_id = f"DNA_WT_{ref_len}bp"
+        mut_pdb_id = f"DNA_VAR_{var_len}bp"
+        locus_pos = res_num or 1
+
+        ref_base = reference_sequence[locus_pos - 1] if (reference_sequence and locus_pos <= len(reference_sequence)) else "G"
+        var_base = variant_sequence[locus_pos - 1] if (variant_sequence and locus_pos <= len(variant_sequence)) else ("G" if not has_mutation else "A")
+
         ref_info = {
             "is_experimental": False,
             "pdb_id": ref_pdb_id,
             "chain": "A",
-            "title": f"Canonical B-DNA Double Helix — Reference ({len(reference_sequence or '')} bp)",
+            "title": f"Canonical B-DNA Double Helix — Reference ({ref_len} bp)",
             "method": "Arnott & Dickerson Canonical Coordinates",
             "resolution": "Idealized Model",
-            "residue_name": f"Base {reference_sequence[res_num-1] if reference_sequence and res_num <= len(reference_sequence) else 'G'}",
-            "residue_code": reference_sequence[res_num-1] if reference_sequence and res_num <= len(reference_sequence) else "G",
+            "residue_name": f"Base {ref_base}",
+            "residue_code": ref_base,
             "residue_code3": "DNA",
-            "residue_number": res_num,
-            "structural_region": f"Watson-Crick antiparallel duplex (bp {res_num})",
+            "residue_number": locus_pos,
+            "structural_region": f"Watson-Crick antiparallel duplex (bp {locus_pos})",
             "secondary_structure": "Right-handed B-form double helix",
             "database": "BioCrystal 3D Canonical Engine",
         }
-        mut_info = {
-            "is_experimental": False,
-            "pdb_id": mut_pdb_id,
-            "chain": "A",
-            "title": f"Canonical B-DNA Double Helix — Variant ({len(variant_sequence or '')} bp)",
-            "method": "Arnott & Dickerson Canonical Coordinates",
-            "resolution": "Idealized Model",
-            "residue_name": f"Base {variant_sequence[res_num-1] if variant_sequence and res_num <= len(variant_sequence) else 'A'}",
-            "residue_code": variant_sequence[res_num-1] if variant_sequence and res_num <= len(variant_sequence) else "A",
-            "residue_code3": "DNA",
-            "residue_number": res_num,
-            "structural_region": f"Duplex mismatch locus (bp {res_num})",
-            "secondary_structure": "Perturbed B-form duplex with mismatch bulge",
-            "clash_impact": "Watson-Crick base-pairing broken; local duplex destabilization observed.",
-            "database": "BioCrystal 3D Canonical Engine",
-        }
 
-    # Retrieve PDB coordinates to compute authentic RMSD and contacts
-    rmsd_val = 1.36 if is_experimental else None
-    contacts_wt = []
-    contacts_mut = []
+        if not has_mutation:
+            mut_info = {
+                "is_experimental": False,
+                "pdb_id": ref_pdb_id,
+                "chain": "A",
+                "title": f"Canonical B-DNA Double Helix — Variant ({var_len} bp, Identical)",
+                "method": "Arnott & Dickerson Canonical Coordinates",
+                "resolution": "Idealized Model",
+                "residue_name": f"Base {ref_base}",
+                "residue_code": ref_base,
+                "residue_code3": "DNA",
+                "residue_number": locus_pos,
+                "structural_region": f"Watson-Crick antiparallel duplex (bp {locus_pos})",
+                "secondary_structure": "Right-handed B-form double helix",
+                "clash_impact": "None — wild-type unmutated duplex.",
+                "database": "BioCrystal 3D Canonical Engine",
+            }
+            observations = [
+                "Canonical B-DNA double-helical duplex modeled from user input.",
+                "Reference and variant sequences are identical; duplex base-pairing is fully conserved.",
+            ]
+        else:
+            mut_info = {
+                "is_experimental": False,
+                "pdb_id": mut_pdb_id,
+                "chain": "A",
+                "title": f"Canonical B-DNA Double Helix — Variant ({var_len} bp)",
+                "method": "Arnott & Dickerson Canonical Coordinates",
+                "resolution": "Idealized Model",
+                "residue_name": f"Base {var_base}",
+                "residue_code": var_base,
+                "residue_code3": "DNA",
+                "residue_number": locus_pos,
+                "structural_region": f"Duplex mismatch locus (bp {locus_pos})",
+                "secondary_structure": "Perturbed B-form duplex with mismatch bulge",
+                "clash_impact": "Watson-Crick base-pairing broken; local duplex destabilization observed.",
+                "database": "BioCrystal 3D Canonical Engine",
+            }
+            observations = [
+                "Canonical B-DNA double-helical duplex modeled from user input.",
+                f"Single-base mismatch at position {locus_pos} ({ref_base} -> {var_base}) perturbs local base stacking.",
+            ]
 
-    if is_experimental:
-        try:
-            cache_dir = get_cache_dir()
-            p_ref = os.path.join(cache_dir, f"{ref_info['pdb_id']}.pdb")
-            p_mut = os.path.join(cache_dir, f"{mut_info['pdb_id']}.pdb")
+    # Retrieve PDB coordinates to compute authentic RMSD and contacts if experimental
+    if is_experimental and ref_info.get("pdb_id") and mut_info.get("pdb_id"):
+        if not has_mutation:
+            rmsd_val = 0.000
+        else:
+            try:
+                cache_dir = get_cache_dir()
+                p_ref = os.path.join(cache_dir, f"{ref_info['pdb_id']}.pdb")
+                p_mut = os.path.join(cache_dir, f"{mut_info['pdb_id']}.pdb")
 
-            if os.path.exists(p_ref) and os.path.exists(p_mut):
-                parser = PDBParser(QUIET=True)
-                s_ref = parser.get_structure("REF", p_ref)
-                s_mut = parser.get_structure("MUT", p_mut)
+                if os.path.exists(p_ref) and os.path.exists(p_mut):
+                    parser = PDBParser(QUIET=True)
+                    s_ref = parser.get_structure("REF", p_ref)
+                    s_mut = parser.get_structure("MUT", p_mut)
 
-                ch_ref = s_ref[0][ref_info["chain"]]
-                ch_mut = s_mut[0][mut_info["chain"]]
+                    ch_ref = s_ref[0][ref_info["chain"]]
+                    ch_mut = s_mut[0][mut_info["chain"]]
 
-                # C-alpha superposition
-                res_ref_dict = {r.get_id()[1]: r["CA"] for r in ch_ref if "CA" in r}
-                res_mut_dict = {r.get_id()[1]: r["CA"] for r in ch_mut if "CA" in r}
-                common = sorted(set(res_ref_dict.keys()) & set(res_mut_dict.keys()))
+                    # C-alpha superposition
+                    res_ref_dict = {r.get_id()[1]: r["CA"] for r in ch_ref if "CA" in r}
+                    res_mut_dict = {r.get_id()[1]: r["CA"] for r in ch_mut if "CA" in r}
+                    common = sorted(set(res_ref_dict.keys()) & set(res_mut_dict.keys()))
 
-                if len(common) > 10:
-                    sup = Superimposer()
-                    sup.set_atoms([res_ref_dict[i] for i in common], [res_mut_dict[i] for i in common])
-                    rmsd_val = round(float(sup.rms), 3)
+                    if len(common) > 10:
+                        sup = Superimposer()
+                        sup.set_atoms([res_ref_dict[i] for i in common], [res_mut_dict[i] for i in common])
+                        rmsd_val = round(float(sup.rms), 3)
 
-                # Contacts within 6.0 Angstroms
-                target_num = ref_info["residue_number"]
-                if target_num in ch_ref and "CA" in ch_ref[target_num]:
-                    r_target = ch_ref[target_num]["CA"].get_coord()
-                    for r in ch_ref:
-                        r_id = r.get_id()[1]
-                        if r_id != target_num and "CA" in r:
-                            d = float(np.linalg.norm(r_target - r["CA"].get_coord()))
-                            if d <= 6.5:
-                                contacts_wt.append(f"{r.get_resname()}{r_id} ({d:.1f}Å)")
+                    # Contacts within 6.5 Angstroms
+                    target_num = ref_info["residue_number"]
+                    if target_num in ch_ref and "CA" in ch_ref[target_num]:
+                        r_target = ch_ref[target_num]["CA"].get_coord()
+                        for r in ch_ref:
+                            r_id = r.get_id()[1]
+                            if r_id != target_num and "CA" in r:
+                                d = float(np.linalg.norm(r_target - r["CA"].get_coord()))
+                                if d <= 6.5:
+                                    contacts_wt.append(f"{r.get_resname()}{r_id} ({d:.1f}Å)")
 
-                target_mut_num = mut_info["residue_number"]
-                if target_mut_num in ch_mut and "CA" in ch_mut[target_mut_num]:
-                    r_target_m = ch_mut[target_mut_num]["CA"].get_coord()
-                    for r in ch_mut:
-                        r_id = r.get_id()[1]
-                        if r_id != target_mut_num and "CA" in r:
-                            d = float(np.linalg.norm(r_target_m - r["CA"].get_coord()))
-                            if d <= 6.5:
-                                contacts_mut.append(f"{r.get_resname()}{r_id} ({d:.1f}Å)")
-        except Exception as e:
-            print(f"Notice: RMSD computation skipped: {e}")
+                    target_mut_num = mut_info["residue_number"]
+                    if target_mut_num in ch_mut and "CA" in ch_mut[target_mut_num]:
+                        r_target_m = ch_mut[target_mut_num]["CA"].get_coord()
+                        for r in ch_mut:
+                            r_id = r.get_id()[1]
+                            if r_id != target_mut_num and "CA" in r:
+                                d = float(np.linalg.norm(r_target_m - r["CA"].get_coord()))
+                                if d <= 6.5:
+                                    contacts_mut.append(f"{r.get_resname()}{r_id} ({d:.1f}Å)")
+            except Exception as e:
+                print(f"Notice: RMSD computation skipped: {e}")
 
-    # Fallback contact lists if PDB parse had non-standard numbering
-    if not contacts_wt:
-        contacts_wt = ["Gly10 (4.5Å)", "Ala11 (3.8Å)", "Gly13 (3.8Å)", "Val14 (5.8Å)", "Gly15 (6.2Å)"]
-    if not contacts_mut:
-        contacts_mut = ["Gly10 (4.6Å)", "Ala11 (3.7Å)", "Gly13 (3.9Å)", "Val14 (5.9Å)", "Lys16 (Clash 2.4Å)"]
+    # Build authentic biophysical comparison table
+    wt_code = ref_info.get("residue_code", "G")
+    mut_code = mut_info.get("residue_code", "G") if has_mutation else wt_code
 
-    # Compute biophysical property differences
-    wt_p = AA_PROPERTIES.get(ref_info.get("residue_code", "G"), AA_PROPERTIES["G"])
-    mut_p = AA_PROPERTIES.get(mut_info.get("residue_code", "D"), AA_PROPERTIES["D"])
+    wt_p = AA_PROPERTIES.get(wt_code, {"name": f"Residue {wt_code}", "code3": wt_code, "vol": 100.0, "kd": 0.0, "mass": 110.0, "charge": 0.0})
+    mut_p = AA_PROPERTIES.get(mut_code, {"name": f"Residue {mut_code}", "code3": mut_code, "vol": 100.0, "kd": 0.0, "mass": 110.0, "charge": 0.0})
 
-    diff_table = [
-        ("Residue & Position", f"{wt_p['name']} ({ref_info.get('residue_code', 'G')}{ref_info.get('residue_number', 12)})",
-         f"{mut_p['name']} ({mut_info.get('residue_code', 'D')}{mut_info.get('residue_number', 12)})",
-         f"p.{wt_p['code3'].capitalize()}{ref_info.get('residue_number', 12)}{mut_p['code3'].capitalize()}"),
-        ("Side-Chain Volume", f"{wt_p['vol']:.1f} Å³", f"{mut_p['vol']:.1f} Å³", f"{mut_p['vol'] - wt_p['vol']:+.1f} Å³ (Steric expansion)"),
-        ("Hydropathy Index (KD)", f"{wt_p['kd']:+.1f}", f"{mut_p['kd']:+.1f}", f"{mut_p['kd'] - wt_p['kd']:+.1f} ({'More hydrophilic' if mut_p['kd'] < wt_p['kd'] else 'More hydrophobic'})"),
-        ("Residue Molecular Mass", f"{wt_p['mass']:.2f} Da", f"{mut_p['mass']:.2f} Da", f"{mut_p['mass'] - wt_p['mass']:+.2f} Da"),
-        ("Net Charge (pH 7.4)", f"{wt_p['charge']:+.1f} e", f"{mut_p['charge']:+.1f} e", f"{mut_p['charge'] - wt_p['charge']:+.1f} e (Charge alteration)"),
-        ("Secondary Structure", ref_info["secondary_structure"], mut_info["secondary_structure"], "Local conformational perturbation"),
-        ("C-alpha RMSD", "0.000 Å (Self-reference)", f"{rmsd_val:.3f} Å" if rmsd_val is not None else "Not calculated (DNA model)",
-         f"{rmsd_val:.3f} Å global structural deviation" if rmsd_val is not None else "Non-protein duplex"),
-        ("Catalytic Sphere Contacts (≤6.5Å)", ", ".join(contacts_wt[:4]), ", ".join(contacts_mut[:4]),
-         "New steric contact with Lys16; P-loop altered" if is_experimental else "Watson-Crick pairing broken"),
-    ]
+    if not has_mutation:
+        diff_table = [
+            ("Residue & Position", f"{wt_p['name']} ({wt_code}{ref_info.get('residue_number', 12)})",
+             f"{wt_p['name']} ({wt_code}{ref_info.get('residue_number', 12)})", "Identical (Unmutated)"),
+            ("Side-Chain Volume", f"{wt_p['vol']:.1f} Å³", f"{wt_p['vol']:.1f} Å³", "0.0 Å³ (Conserved)"),
+            ("Hydropathy Index (KD)", f"{wt_p['kd']:+.1f}", f"{wt_p['kd']:+.1f}", "0.0 (Conserved)"),
+            ("Residue Molecular Mass", f"{wt_p['mass']:.2f} Da", f"{wt_p['mass']:.2f} Da", "0.00 Da (Conserved)"),
+            ("Net Charge (pH 7.4)", f"{wt_p['charge']:+.1f} e", f"{wt_p['charge']:+.1f} e", "0.0 e (Conserved)"),
+            ("Secondary Structure", ref_info.get("secondary_structure", "Native fold"), mut_info.get("secondary_structure", "Native fold"), "Identical secondary structure"),
+            ("C-alpha RMSD", "0.000 Å (Self-reference)", "0.000 Å", "0.000 Å (Zero deviation)"),
+            ("Active-Site Contacts (≤6.5Å)", ", ".join(contacts_wt[:4]) if contacts_wt else "Native catalytic pocket",
+             ", ".join(contacts_wt[:4]) if contacts_wt else "Native catalytic pocket", "Conserved native contacts"),
+        ]
+    else:
+        vol_diff = mut_p['vol'] - wt_p['vol']
+        kd_diff = mut_p['kd'] - wt_p['kd']
+        mass_diff = mut_p['mass'] - wt_p['mass']
+        charge_diff = mut_p['charge'] - wt_p['charge']
+
+        diff_table = [
+            ("Residue & Position", f"{wt_p['name']} ({wt_code}{ref_info.get('residue_number', 12)})",
+             f"{mut_p['name']} ({mut_code}{mut_info.get('residue_number', 12)})",
+             f"p.{wt_p['code3'].capitalize()}{ref_info.get('residue_number', 12)}{mut_p['code3'].capitalize()}"),
+            ("Side-Chain Volume", f"{wt_p['vol']:.1f} Å³", f"{mut_p['vol']:.1f} Å³",
+             f"{vol_diff:+.1f} Å³ ({'Steric expansion' if vol_diff > 0 else 'Steric contraction' if vol_diff < 0 else 'Conserved'})"),
+            ("Hydropathy Index (KD)", f"{wt_p['kd']:+.1f}", f"{mut_p['kd']:+.1f}",
+             f"{kd_diff:+.1f} ({'More hydrophilic' if kd_diff < 0 else 'More hydrophobic' if kd_diff > 0 else 'Conserved'})"),
+            ("Residue Molecular Mass", f"{wt_p['mass']:.2f} Da", f"{mut_p['mass']:.2f} Da", f"{mass_diff:+.2f} Da"),
+            ("Net Charge (pH 7.4)", f"{wt_p['charge']:+.1f} e", f"{mut_p['charge']:+.1f} e",
+             f"{charge_diff:+.1f} e ({'Charge alteration' if charge_diff != 0 else 'Charge conserved'})"),
+            ("Secondary Structure", ref_info.get("secondary_structure", "Native fold"), mut_info.get("secondary_structure", "Native fold"),
+             "Local conformational perturbation" if is_experimental else "Model-predicted secondary structure"),
+            ("C-alpha RMSD", "0.000 Å (Self-reference)",
+             f"{rmsd_val:.3f} Å" if rmsd_val is not None else "Not available (no mutant PDB)",
+             f"{rmsd_val:.3f} Å global structural deviation" if rmsd_val is not None else "Not available"),
+            ("Active-Site Contacts (≤6.5Å)", ", ".join(contacts_wt[:4]) if contacts_wt else "Experimental coordinates",
+             ", ".join(contacts_mut[:4]) if contacts_mut else ("Not available" if not is_experimental else "Experimental coordinates"),
+             "Altered active-site contacts" if is_experimental else "Contact mapping unavailable"),
+        ]
 
     return {
         "gene": gene_upper or "DNA",
@@ -451,12 +578,13 @@ def compute_structural_comparison(
         "variant": mut_info,
         "rmsd": rmsd_val,
         "diff_table": diff_table,
-        "observations": [
-            f"Reference structure ({ref_info['pdb_id']}) exhibits native unconstrained conformation at residue {ref_info['residue_number']}.",
-            f"Variant structure ({mut_info['pdb_id']}) reveals {mut_info.get('clash_impact', 'structural alteration at the mutated site.')}",
+        "observations": observations if observations else [
+            f"Reference structure ({ref_info.get('pdb_id', 'REF')}) exhibits native conformation at residue {ref_info.get('residue_number', 12)}.",
+            f"Variant structure ({mut_info.get('pdb_id', 'VAR')}) reveals {mut_info.get('clash_impact', 'structural alteration at the mutated site.')}",
             f"Net side-chain volume shifts by {mut_p['vol'] - wt_p['vol']:+.1f} Å³ with a net charge change of {mut_p['charge'] - wt_p['charge']:+.1f} e.",
-            f"C-alpha structural alignment yields a coordinate RMSD of {rmsd_val:.3f} Å across shared backbone positions." if rmsd_val is not None else "Idealized canonical B-DNA model demonstrates localized base-pair destabilization.",
+            f"C-alpha structural alignment yields a coordinate RMSD of {rmsd_val:.3f} Å across shared backbone positions." if rmsd_val is not None else "Sequence-level analysis completed without coordinate fabrication.",
         ],
+        "has_mutation": has_mutation,
     }
 
 
@@ -498,7 +626,7 @@ def render_3d_comparison_panel(
             pdb_path=p_ref if os.path.exists(p_ref) else None,
             chain_id=ref_chain,
             highlight_res=ref_res_num,
-            highlight_color="#0F766E",  # Teal for Wildtype
+            highlight_color="#DC2626",  # User requested: Red for BEFORE
             highlight_name=ref_label,
             panel_title=f"BEFORE: Reference Wild-Type\n({ref_pdb_id} · Chain {ref_chain})",
             is_mutant=False,
@@ -508,14 +636,19 @@ def render_3d_comparison_panel(
         # PANEL B: VARIANT (AFTER)
         # -----------------------------
         ax2 = fig.add_subplot(1, 2, 2, projection="3d", facecolor="white")
+        panel_b_title = (
+            f"AFTER: Variant / Mutated\n({mut_pdb_id} · Chain {mut_chain})"
+            if mut_pdb_id
+            else "AFTER: Variant Conformation\n(Experimental mutant PDB unavailable)"
+        )
         _render_single_structure(
             ax=ax2,
-            pdb_path=p_mut if os.path.exists(p_mut) else None,
+            pdb_path=p_mut if (mut_pdb_id and os.path.exists(p_mut)) else None,
             chain_id=mut_chain,
             highlight_res=mut_res_num,
-            highlight_color="#DC2626",  # Crimson Red for Mutation
+            highlight_color="#16A34A",  # User requested: Green for AFTER
             highlight_name=mut_label,
-            panel_title=f"AFTER: Variant / Mutated\n({mut_pdb_id} · Chain {mut_chain})",
+            panel_title=panel_b_title,
             is_mutant=True,
         )
 
@@ -579,9 +712,10 @@ def _render_single_structure(
         if highlight_coord is not None:
             # Render prominent mutation locus
             ax.scatter([highlight_coord[0]], [highlight_coord[1]], [highlight_coord[2]],
-                       color=highlight_color, s=260, edgecolors="#0F172A", linewidths=1.8, zorder=10)
+                       color=highlight_color, s=340, edgecolors="#0F172A", linewidths=2.0, zorder=10)
             ax.text(highlight_coord[0] + 1.2, highlight_coord[1] + 1.2, highlight_coord[2] + 1.2,
-                    highlight_name, fontsize=8.5, fontweight="bold", color=highlight_color)
+                    highlight_name, fontsize=9.0, fontweight="bold", color=highlight_color, zorder=11,
+                    bbox=dict(boxstyle="round,pad=0.25", facecolor="white", edgecolor=highlight_color, alpha=0.92, linewidth=0.9))
     else:
         # Synthetic helical representation for DNA or unparsed models
         n_pts = 60
@@ -591,11 +725,12 @@ def _render_single_structure(
         x = r * np.cos(t)
         y = r * np.sin(t)
         z = pitch * t
-        ax.plot(x, y, z, color="#0F766E" if not is_mutant else "#DC2626", linewidth=2.5, alpha=0.85)
+        ax.plot(x, y, z, color=highlight_color, linewidth=2.6, alpha=0.9)
         # Highlight mid locus
         mid = n_pts // 2
-        ax.scatter([x[mid]], [y[mid]], [z[mid]], color=highlight_color, s=240, edgecolors="#0F172A", zorder=10)
-        ax.text(x[mid] + 1.5, y[mid] + 1.5, z[mid] + 1.5, highlight_name, fontsize=8.5, fontweight="bold", color=highlight_color)
+        ax.scatter([x[mid]], [y[mid]], [z[mid]], color=highlight_color, s=300, edgecolors="#0F172A", zorder=10)
+        ax.text(x[mid] + 1.5, y[mid] + 1.5, z[mid] + 1.5, highlight_name, fontsize=9.0, fontweight="bold", color=highlight_color,
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", edgecolor=highlight_color, alpha=0.92, linewidth=0.9))
 
     ax.set_title(panel_title, fontsize=8.5, fontweight="bold", pad=8, color="#0F172A")
     ax.axis("off")
