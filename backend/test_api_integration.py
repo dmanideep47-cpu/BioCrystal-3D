@@ -143,10 +143,10 @@ class TestBioCrystalAPI(unittest.TestCase):
         self.assertEqual(res.headers["content-type"], "application/pdf")
         self.assertGreater(len(res.content), 1000)
 
-    def test_pdf_has_four_pages_for_small_and_large_analyses(self):
+    def test_pdf_has_nine_pages_for_small_and_large_analyses(self):
         for variant_count in (0, 250):
             reference = "A" * max(15, variant_count)
-            observed = "C" * max(15, variant_count)
+            observed = ("A" if variant_count == 0 else "C") * max(15, variant_count)
             mutations = [
                 {
                     "type": "substitution",
@@ -185,7 +185,7 @@ class TestBioCrystalAPI(unittest.TestCase):
                 "structure_mapping": {"mapped": False, "reason": "Not supplied in test fixture."},
             })
             reader = PdfReader(BytesIO(report))
-            self.assertEqual(len(reader.pages), 7, f"PDF with {variant_count} variants must have 7 pages")
+            self.assertEqual(len(reader.pages), 9, f"PDF with {variant_count} variants must have 9 pages")
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
             self.assertNotIn("\ufffd", text)
 

@@ -33,6 +33,7 @@ from dna_biophysics import compute_dna_biophysics
 from pdf_generator import generate_pdf_report
 from property_engine import analyze_property, SUPPORTED_OBJECTIVES
 from variant_intelligence import analyze_variant_intelligence
+from analysis_pipeline import ScientificAnalysisPipeline, validate_analysis_consistency
 
 app = FastAPI(
     title="BioCrystal 3D DNA Simulation Engine",
@@ -172,6 +173,21 @@ class PDFExportRequest(BaseModel):
     organism: Optional[str] = None
     alignment: Optional[Dict[str, Any]] = None
     analysis_result: Optional[Dict[str, Any]] = None
+
+
+class PipelineAnalyzeRequest(BaseModel):
+    reference_sequence: str
+    variant_sequence: str
+    gene: Optional[str] = "KRAS"
+    reading_frame: Optional[int] = 0
+    table_id: Optional[int] = 1
+    is_coding: Optional[bool] = True
+    accession: Optional[str] = None
+    organism: Optional[str] = "Homo sapiens"
+
+
+class PipelineValidateRequest(BaseModel):
+    analysis: Dict[str, Any]
 
 
 # ==============================================================================
@@ -723,14 +739,44 @@ def api_property_analysis(req: PropertyAnalysisRequest):
     )
 
 
+@app.post("/api/pipeline/analyze")
+def api_pipeline_analyze(req: PipelineAnalyzeRequest):
+    try:
+        return ScientificAnalysisPipeline.execute(
+            reference_sequence=req.reference_sequence,
+            variant_sequence=req.variant_sequence,
+            gene=req.gene,
+            reading_frame=req.reading_frame or 0,
+            table_id=req.table_id or 1,
+            is_coding=req.is_coding if req.is_coding is not None else True,
+            accession=req.accession,
+            organism=req.organism or "Homo sapiens",
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Pipeline execution error: {str(exc)}")
+
+
+@app.post("/api/pipeline/validate")
+def api_pipeline_validate(req: PipelineValidateRequest):
+    return validate_analysis_consistency(req.analysis)
+
+
 @app.post("/api/export-pdf")
+@app.post("/api/report")
 def api_export_pdf(req: PDFExportRequest):
-    pdf_bytes = generate_pdf_report(req.model_dump())
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=BioCrystal_DNA_Analysis_Report.pdf"}
-    )
+    try:
+        pdf_bytes = generate_pdf_report(req.model_dump())
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=BioCrystal_DNA_Analysis_Report.pdf"}
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=422, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF Generation Error: {str(exc)}")
 
 
 if __name__ == "__main__":
