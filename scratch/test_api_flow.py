@@ -65,4 +65,4 @@ def run_live_test_api():
     print('ALL ENDPOINTS AND RESTORATION RESPONSES SUCCEEDED PERFECTLY!')
 
 if __name__ == '__main__':
-    test_api()
+    run_live_test_api()
