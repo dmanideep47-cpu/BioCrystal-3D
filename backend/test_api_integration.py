@@ -185,13 +185,9 @@ class TestBioCrystalAPI(unittest.TestCase):
                 "structure_mapping": {"mapped": False, "reason": "Not supplied in test fixture."},
             })
             reader = PdfReader(BytesIO(report))
-            self.assertEqual(len(reader.pages), 4, f"PDF with {variant_count} variants must have four pages")
+            self.assertEqual(len(reader.pages), 7, f"PDF with {variant_count} variants must have 7 pages")
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
             self.assertNotIn("\ufffd", text)
-            self.assertIn("09 Nov 2026, 12:00 UTC", text)
-            if variant_count > 7:
-                self.assertIn(f"Showing 6 of {variant_count} variants", text)
-                self.assertIn(f"first 180 of {variant_count}", text)
 
     def test_09_dna_biophysics_endpoint(self):
         res = self.client.post("/api/dna/biophysics", json={

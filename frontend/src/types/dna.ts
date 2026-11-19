@@ -323,6 +323,11 @@ export interface StructureMappingResult {
   reason?: string | null;
   mappings: MappedResidue[];
   provenance: StructureProvenance | null;
+  reference_pdb_id?: string | null;
+  reference_chain?: string | null;
+  reference_pdb_data?: string | null;
+  comparison?: any;
+  pdb_data?: string | null;
 }
 
 export interface DnaStructureResult {

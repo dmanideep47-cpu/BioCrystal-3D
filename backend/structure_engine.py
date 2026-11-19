@@ -42,12 +42,68 @@ GENE_STRUCTURE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "title": "Crystal structure of KRAS G12C bound to AMG 510 (Sotorasib inhibitor)",
         "method": "X-ray Diffraction",
         "resolution": "1.35 Å",
+        "reference_pdb_id": "4OBE",
+        "reference_chain": "A",
         "coding_sequence": "ATGACTGAATATAAACTTGTGGTAGTTGGAGCTGGTGGCGTAGGCAAGAGTGCCTTGACG",
         "cds_start_offset": 0,
         "known_hotspots": {
             12: {"region": "P-loop (residues 10-17)"},
             13: {"region": "P-loop (residues 10-17)"},
             61: {"region": "Switch II (residues 59-67)"},
+        },
+    },
+    "BRAF": {
+        "gene": "BRAF",
+        "organism": "Homo sapiens",
+        "accession": "NM_004333.6",
+        "uniprot": "P15056",
+        "pdb_id": "4MNF",
+        "chain": "A",
+        "title": "Crystal structure of active BRAF V600E kinase domain",
+        "method": "X-ray Diffraction",
+        "resolution": "2.65 Å",
+        "reference_pdb_id": "4MNE",
+        "reference_chain": "A",
+        "coding_sequence": "CTAGTAAAAATAGGTGATTTTGGTCTAGCCACAGTGAAATCTCGATGGAGTGGGTCCCATCAGTTTGAACAGTTGTCTGGATCC",
+        "cds_start_offset": 590,
+        "known_hotspots": {
+            600: {"region": "Activation loop (residues 594-623)"},
+        },
+    },
+    "EGFR": {
+        "gene": "EGFR",
+        "organism": "Homo sapiens",
+        "accession": "NM_005228.5",
+        "uniprot": "P00533",
+        "pdb_id": "2ITV",
+        "chain": "A",
+        "title": "Crystal structure of EGFR kinase domain L858R mutant",
+        "method": "X-ray Diffraction",
+        "resolution": "2.70 Å",
+        "reference_pdb_id": "2ITX",
+        "reference_chain": "A",
+        "coding_sequence": "CACAGATTTTGGGCTGGCCAAACTGCTGGGTGCGGAAGAGAAAGAATACCATGCAGAAGGAGGCAAAGTG",
+        "cds_start_offset": 850,
+        "known_hotspots": {
+            858: {"region": "Activation loop / Exon 21"},
+        },
+    },
+    "TP53": {
+        "gene": "TP53",
+        "organism": "Homo sapiens",
+        "accession": "NM_000546.6",
+        "uniprot": "P04637",
+        "pdb_id": "2BIM",
+        "chain": "A",
+        "title": "Crystal structure of cancer mutant p53 core domain R273H",
+        "method": "X-ray Diffraction",
+        "resolution": "1.50 Å",
+        "reference_pdb_id": "1TUP",
+        "reference_chain": "B",
+        "coding_sequence": "ATTTGCGTGTGGAGTATTTGGATGACAGAAACACTTTTCGACATAGTGTGGTGGTGCCCTATGAGCCGCCTGAG",
+        "cds_start_offset": 265,
+        "known_hotspots": {
+            273: {"region": "DNA contact surface / Loop-Sheet-Helix motif"},
         },
     },
     "HBB": {
@@ -164,11 +220,25 @@ def generate_dna_structure_mapping(
     except Exception as e:
         print(f"Notice: could not write {cache_path}: {e}")
 
+    try:
+        from structure_comparison import compute_structural_comparison
+    except ImportError:
+        from backend.structure_comparison import compute_structural_comparison
+
+    dna_comp = compute_structural_comparison(
+        gene=gene or "DNA",
+        mutations=mutations or [],
+        reference_sequence=clean_seq,
+    )
+
     return {
         "mapped": True,
         "structure_type": "idealized_dna_duplex",
         "pdb_id": pdb_id,
         "chain": "A",
+        "reference_pdb_id": pdb_id,
+        "reference_chain": "A",
+        "comparison": dna_comp,
         "status": f"Computed idealized canonical B-DNA model ({len(clean_seq)} bp)",
         "reason": None,
         "mappings": mapped_residues,
@@ -337,14 +407,17 @@ def map_mutations_to_structure(
             codon_idx = (ref_pos - 1 - reading_frame) // 3 + 1
             residue_num = codon_idx - target_config["cds_start_offset"]
 
-            orig_aa = mut.get("original_amino_acid", {}).get("code3", "Unk")
-            mut_aa = mut.get("observed_amino_acid", {}).get("code3", "Unk")
+            oa_raw = mut.get("original_amino_acid") or mut.get("reference_amino_acid") or {}
+            ma_raw = mut.get("observed_amino_acid") or {}
+            orig_aa = oa_raw.get("code3", "Unk") if isinstance(oa_raw, dict) else (oa_raw if isinstance(oa_raw, str) else "Unk")
+            mut_aa = ma_raw.get("code3", "Unk") if isinstance(ma_raw, dict) else (ma_raw if isinstance(ma_raw, str) else "Unk")
             hotspot_info = target_config["known_hotspots"].get(residue_num, {})
             if residue_num not in chain:
                 continue
             pdb_residue = seq1(chain[residue_num].resname)
             region = hotspot_info.get("region", "No curated region annotation")
 
+            mut_code1 = ma_raw.get("code1") if isinstance(ma_raw, dict) else (ma_raw if isinstance(ma_raw, str) and len(ma_raw) == 1 else "")
             mappings.append({
                 "mutation_ref_pos": ref_pos,
                 "mutation_type": mut.get("type"),
@@ -354,7 +427,7 @@ def map_mutations_to_structure(
                 "original_residue": orig_aa,
                 "mutated_residue": mut_aa,
                 "pdb_residue": pdb_residue,
-                "pdb_matches_observed_residue": pdb_residue == mut.get("observed_amino_acid", {}).get("code1"),
+                "pdb_matches_observed_residue": pdb_residue == mut_code1,
                 "structural_region": region,
                 "mapping_confidence": "Curated reference coordinate; PDB residue verified",
                 "is_mapped": True,
@@ -380,10 +453,30 @@ def map_mutations_to_structure(
 
     is_mapped_status = True if (len(mutations) == 0 or has_any_mapped) else False
 
+    try:
+        from structure_comparison import compute_structural_comparison
+    except ImportError:
+        from backend.structure_comparison import compute_structural_comparison
+
+    comp = compute_structural_comparison(
+        gene=gene_key or target_config.get("gene", "KRAS"),
+        mutations=mutations,
+        reference_pdb_id=target_config.get("reference_pdb_id", target_config["pdb_id"]),
+        reference_sequence=clean_reference,
+    )
+
+    # Fetch reference PDB data for dual side-by-side viewer
+    ref_pdb_id = comp["reference"]["pdb_id"]
+    ref_pdb_data = fetch_pdb_file(ref_pdb_id) if ref_pdb_id else None
+
     return {
         "mapped": is_mapped_status,
         "pdb_id": target_config["pdb_id"],
         "chain": target_config["chain"],
+        "reference_pdb_id": ref_pdb_id,
+        "reference_chain": comp["reference"]["chain"],
+        "reference_pdb_data": ref_pdb_data,
+        "comparison": comp,
         "status": "Wildtype reference PDB structure (0 mutations)" if len(mutations) == 0 else "Experimental PDB coordinates with verified residue locations",
         "reason": None if is_mapped_status else "No substitution could be localized in the configured PDB chain; indels are not mapped to static residue coordinates.",
         "mappings": mappings,

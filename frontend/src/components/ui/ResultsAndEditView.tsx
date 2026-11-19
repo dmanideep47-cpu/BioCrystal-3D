@@ -8,6 +8,7 @@ import {
   VariantComparisonResult,
 } from '../../types/dna';
 import { MolecularSurfaceViewer } from '../3d/MolecularSurfaceViewer';
+import { StructuralComparisonView } from '../3d/StructuralComparisonView';
 import { BiophysicalAnalysisSection } from '../3d/BiophysicalAnalysisSection';
 import { DnaReplacementSection } from './DnaReplacementSection';
 import { TacticalButton } from './TacticalButton';
@@ -2125,19 +2126,19 @@ return (
               </div>
             </div>
 
-            {/* Seamless 3D Viewer Container */}
-            <div className="border border-[#E5E5E5] rounded-[8px] overflow-hidden bg-[#0A0D0C] shadow-xs" style={{ height: '600px' }}>
-              <MolecularSurfaceViewer
+            {/* Dual 3D Structural Comparison Container (Before vs After) */}
+            <div className="border border-[#E5E5E5] rounded-[8px] overflow-hidden bg-[#0A0D0C] shadow-xs" style={{ minHeight: '620px' }}>
+              <StructuralComparisonView
                 key={`${structureRevision}:${activePdbData?.length ?? 0}`}
                 pdbData={activePdbData}
+                referencePdbData={analysisResult?.structure_mapping?.reference_pdb_data}
+                comparison={analysisResult?.structure_mapping?.comparison}
                 mappedResidues={mappedResidues}
+                mutations={mutations}
                 selectedResidueNumber={selectedMappedResidue?.residue_number ?? null}
                 selectedChain={selectedMappedResidue?.chain ?? 'A'}
                 provenance={activeProvenance}
                 isMapped={isStructureMapped}
-                isAnalyzed={!isModified}
-                sequenceRevision={structureRevision}
-                structureKind={activeStructureMode}
                 unmappedReason={
                   analysisResult?.structure_error ||
                   activeStructureMapping?.reason

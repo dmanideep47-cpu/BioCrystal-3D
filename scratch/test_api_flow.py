@@ -1,7 +1,7 @@
 import urllib.request
 import json
 
-def test_api():
+def run_live_test_api():
     base = 'http://127.0.0.1:8000'
     ref = 'ATGGCTGAATTTCCGAAATAA'
     # Initial mutated sequence (pos 7 is T)
